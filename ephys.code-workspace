@@ -8,6 +8,12 @@
 		},
 		{
 			"path": "../../../../joao/lib/spks"
+		},
+		{
+			"path": "../../chiCa"
+		},
+		{
+			"path": "../chipmunk_behavior"
 		}
 	],
 	"settings": {},

@@ -3,6 +3,10 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from spks.event_aligned import compute_firing_rate
+from spks.utils import gaussian_function
+
+#%% Visualizing Kilosort cluster data
 
 def plot_cluster_info_histograms(clu):
     # Setup
@@ -69,6 +73,8 @@ def plot_cluster_info_histograms(clu):
     axs[2, 1].set_xlabel('depth')
     axs[2, 1].set_ylabel('counts')
 
+#%% Individual neuron related functions
+
 def individual_raster_viewer(trig_ts, tpre=0.1, tpost=1):
     from ipywidgets import IntSlider, Button, HBox, VBox
     from IPython.display import display
@@ -113,6 +119,77 @@ def individual_raster_viewer(trig_ts, tpre=0.1, tpost=1):
     # Initial plot
     plot_neuron(slider.value)
 
+#%% PSTH related functions
+
+def plot_psth(iunit, event_times, spike_times, pre=0.5, post=1, binw=0.01, kernel_width=2):
+    """
+    Plots the Peri-Stimulus Time Histogram (PSTH) with SEM shading.
+    
+    Parameters:
+    - event_times: array-like, times of the stimulus events.
+    - spike_times: array-like, times of the spikes.
+    - pre: float, time window before the stimulus event.
+    - post: float, time window after the stimulus event.
+    - binw: float, bin width for the histogram.
+    - kernel_width: float, width of the Gaussian kernel for smoothing.
+    """
+    psth_matrix, event_index = compute_firing_rate(
+        event_times=event_times,
+        spike_times=spike_times[iunit],
+        pre_seconds=pre,
+        post_seconds=post,
+        binwidth_ms=int(binw * 1000),
+        kernel=gaussian_function(kernel_width)
+    )
+    
+    trial_avg_psth = np.mean(psth_matrix, axis=0)
+    trial_sem_psth = np.std(psth_matrix, axis=0) / np.sqrt(psth_matrix.shape[0])
+
+    x_nums = np.arange(-pre, post, binw)
+    plt.plot(x_nums[:-1], trial_avg_psth, label='Average PSTH')
+    plt.fill_between(x_nums[:-1], trial_avg_psth - trial_sem_psth, trial_avg_psth + trial_sem_psth, alpha=0.3, label='SEM')
+    plt.vlines([0], ymin=plt.ylim()[0], ymax=plt.ylim()[1], linestyles='dashed', color='gray')
+    plt.xlabel('Time from first stimulus event (s)')
+    plt.ylabel('Firing rate (Hz)')
+    plt.title(f'Trial avg PSTH with SEM; iunit: {iunit}')
+
+    ax = plt.gca()
+    separate_axes(ax)  # Assuming separate_axes is defined elsewhere
+
+def individual_psth_viewer(event_times, spike_times, pre=0.5, post=1, binw=0.01, kernel_width=2):
+    from ipywidgets import IntSlider, Button, HBox, VBox
+    from IPython.display import display
+    # Create the slider and buttons
+    ax = plt.gca()
+    slider = IntSlider(min=0, max=len(spike_times) - 1, step=1, value=0)
+    next_button = Button(description="Next")
+    prev_button = Button(description="Previous")
+
+    # Define button click event handlers
+    def on_next_button_clicked(b):
+        slider.value = min(slider.value + 1, slider.max)
+
+    def on_prev_button_clicked(b):
+        slider.value = max(slider.value - 1, slider.min)
+
+    # Attach event handlers to buttons
+    next_button.on_click(on_next_button_clicked)
+    prev_button.on_click(on_prev_button_clicked)
+
+    # Update plot when slider value changes
+    def on_slider_value_change(change):
+        ax.clear()
+        plot_psth(change['new'], event_times = event_times, spike_times = spike_times, pre = pre, post = post, binw = binw, kernel_width = kernel_width)
+
+    slider.observe(on_slider_value_change, names='value')
+
+    # Display buttons and slider
+    display(VBox([HBox([prev_button, next_button]), slider]))
+
+    # Initial plot
+    plot_psth(iunit = slider.value, event_times = event_times, spike_times = spike_times, pre = pre, post = post, binw = binw, kernel_width = kernel_width)
+
+# ---------- Plotting utils ----------
 def separate_axes(ax):
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)

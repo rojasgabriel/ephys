@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from spks.event_aligned import compute_firing_rate
 from utils import get_cluster_spike_times, compute_mean_sem, suppress_print
 
-def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, ylabel, title=None):
+def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, ylabel, fig_title=None):
     mean, sem = mean_sem_func
     x = np.arange(-pre_seconds, post_seconds, binwidth_ms/1000)
     plt.plot(x, mean, color='b', alpha=0.5)
@@ -14,7 +14,7 @@ def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, yla
     plt.vlines(0, ymin=mean.min(), ymax=mean.max(), color='k', linestyles='dashed', alpha=0.5)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.title(title, fontsize=10)
+    plt.title(fig_title, fontsize=10)
     plt.tight_layout()
 
 def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, post_seconds, binwidth_ms, save_dir, fig_title=None):

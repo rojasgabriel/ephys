@@ -17,15 +17,18 @@ def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, yla
     plt.title(title, fontsize=10)
     plt.tight_layout()
 
-def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, post_seconds, binwidth_ms, title):
+def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, post_seconds, binwidth_ms, save_dir, fig_title=None):
     from ipywidgets import IntSlider, Button, HBox, VBox
     from IPython.display import display
+    import matplotlib.pyplot as plt
+    import os
 
     # Create the slider and buttons
     ax = plt.gca()
     slider = IntSlider(min=0, max=len(single_unit_timestamps) - 1, step=1, value=0)
     next_button = Button(description="Next")
     prev_button = Button(description="Previous")
+    save_button = Button(description="Save")
 
     # Define button click event handlers
     def on_next_button_clicked(b):
@@ -34,9 +37,15 @@ def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, pos
     def on_prev_button_clicked(b):
         slider.value = max(slider.value - 1, slider.min)
 
+    def on_save_button_clicked(b):
+        filename = f"{fig_title}_unit_{slider.value}.png"
+        filepath = os.path.join(save_dir, filename)
+        plt.savefig(filepath)
+
     # Attach event handlers to buttons
     next_button.on_click(on_next_button_clicked)
     prev_button.on_click(on_prev_button_clicked)
+    save_button.on_click(on_save_button_clicked)
 
     # Update plot when slider value changes
     def on_slider_value_change(change):
@@ -44,17 +53,20 @@ def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, pos
         # plot_psth(change['new'], event_times = event_times, spike_times = spike_times, pre = pre, post = post, binw = binw, kernel_width = kernel_width)
         with suppress_print():
             psth, _ = compute_firing_rate(event_times, single_unit_timestamps[slider.value], pre_seconds, post_seconds, binwidth_ms)
-        plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{title}\niunit: {slider.value}')
+        plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{fig_title}\niunit: {slider.value}')
+        plt.draw()  # Ensure the plot is updated
 
     slider.observe(on_slider_value_change, names='value')
 
     # Display buttons and slider
-    display(VBox([HBox([prev_button, next_button]), slider]))
+    display(VBox([HBox([prev_button, next_button, save_button]), slider]))
 
     # Initial plot
     with suppress_print():
         psth, _ = compute_firing_rate(event_times, single_unit_timestamps[slider.value], pre_seconds, post_seconds, binwidth_ms)
-    plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{title}\niunit: {slider.value}')
+    plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{fig_title}\niunit: {slider.value}')
+    plt.show()
+
 
 # #%% old functions
 

@@ -3,6 +3,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from os.path import join as pjoin
 from spks.event_aligned import compute_firing_rate
 from utils import get_cluster_spike_times, compute_mean_sem, suppress_print
 
@@ -25,8 +26,6 @@ def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, yla
 def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, post_seconds, binwidth_ms, save_dir, fig_title = None):
     from ipywidgets import IntSlider, Button, HBox, VBox
     from IPython.display import display
-    import matplotlib.pyplot as plt
-    import os
 
     # Create the slider and buttons
     ax = plt.gca()
@@ -44,7 +43,7 @@ def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, pos
 
     def on_save_button_clicked(b):
         filename = f"{fig_title}_unit_{slider.value}.png"
-        filepath = os.path.join(save_dir, filename)
+        filepath = pjoin(save_dir, filename)
         plt.savefig(filepath)
 
     # Attach event handlers to buttons
@@ -55,7 +54,6 @@ def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, pos
     # Update plot when slider value changes
     def on_slider_value_change(change):
         ax.clear()
-        # plot_psth(change['new'], event_times = event_times, spike_times = spike_times, pre = pre, post = post, binw = binw, kernel_width = kernel_width)
         with suppress_print():
             psth, _ = compute_firing_rate(event_times, single_unit_timestamps[slider.value], pre_seconds, post_seconds, binwidth_ms)
         plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{fig_title}\niunit: {slider.value}')

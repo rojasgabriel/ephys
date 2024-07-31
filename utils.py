@@ -38,7 +38,7 @@ def compute_mean_sem(psth):
     return np.mean(psth, axis=0), np.std(psth, axis=0) / np.sqrt(psth.shape[0])
 
 def get_nth_element(x, i):
-    if isinstance(x, np.ndarray) and len(x) > i and not np.isnan(x[0]):
+    if len(x) > i and not np.isnan(x[0]):
         return x[i]
     return np.nan
 

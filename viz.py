@@ -6,18 +6,23 @@ import matplotlib.pyplot as plt
 from spks.event_aligned import compute_firing_rate
 from utils import get_cluster_spike_times, compute_mean_sem, suppress_print
 
-def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, ylabel, fig_title=None):
+def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, ylabel, fig_title=None, data_label=None, color='b', ax = None, tight = True):
     mean, sem = mean_sem_func
     x = np.arange(-pre_seconds, post_seconds, binwidth_ms/1000)
-    plt.plot(x, mean, color='b', alpha=0.5)
-    plt.fill_between(x, mean - sem, mean + sem, alpha=0.3, label='SEM')
-    plt.vlines(0, ymin=mean.min(), ymax=mean.max(), color='k', linestyles='dashed', alpha=0.5)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.title(fig_title, fontsize=10)
-    plt.tight_layout()
 
-def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, post_seconds, binwidth_ms, save_dir, fig_title=None):
+    if not ax:
+        ax = plt.gca()
+
+    ax.plot(x, mean, color=color, alpha=0.5, label=data_label)
+    ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.3)
+    ax.vlines(0, ymin=mean.min(), ymax=mean.max(), color='k', linestyles='dashed', alpha=0.5)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(fig_title, fontsize=10)
+    if tight:
+        plt.tight_layout()
+
+def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, post_seconds, binwidth_ms, save_dir, fig_title = None):
     from ipywidgets import IntSlider, Button, HBox, VBox
     from IPython.display import display
     import matplotlib.pyplot as plt

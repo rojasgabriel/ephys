@@ -11,7 +11,7 @@ def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, yla
     mean, sem = mean_sem_func
     x = np.arange(-pre_seconds, post_seconds, binwidth_ms/1000)
 
-    if not ax:
+    if ax is None:
         ax = plt.gca()
 
     ax.plot(x, mean, color=color, alpha=0.5, label=data_label)
@@ -23,12 +23,11 @@ def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, yla
     if tight:
         plt.tight_layout()
 
-def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, post_seconds, binwidth_ms, save_dir, fig_title = None):
+def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, post_seconds, binwidth_ms, save_dir, fig_title = None, ax = None):
     from ipywidgets import IntSlider, Button, HBox, VBox
     from IPython.display import display
 
     # Create the slider and buttons
-    ax = plt.gca()
     slider = IntSlider(min=0, max=len(single_unit_timestamps) - 1, step=1, value=0)
     next_button = Button(description="Next")
     prev_button = Button(description="Previous")
@@ -56,7 +55,7 @@ def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, pos
         ax.clear()
         with suppress_print():
             psth, _ = compute_firing_rate(event_times, single_unit_timestamps[slider.value], pre_seconds, post_seconds, binwidth_ms)
-        plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{fig_title}\niunit: {slider.value}')
+        plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{fig_title}\niunit: {slider.value}', ax = ax)
         plt.draw()  # Ensure the plot is updated
 
     slider.observe(on_slider_value_change, names='value')

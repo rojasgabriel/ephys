@@ -22,7 +22,7 @@ def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, xlabel, yla
     ax.set_title(fig_title, fontsize=10)
     if tight:
         plt.tight_layout()
-
+        
 def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, post_seconds, binwidth_ms, save_dir, fig_title = None, ax = None):
     from ipywidgets import IntSlider, Button, HBox, VBox
     from IPython.display import display
@@ -66,8 +66,8 @@ def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, pos
     # Initial plot
     with suppress_print():
         psth, _ = compute_firing_rate(event_times, single_unit_timestamps[slider.value], pre_seconds, post_seconds, binwidth_ms)
-    plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{fig_title}\niunit: {slider.value}')
-    plt.show()
+    plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{fig_title}\niunit: {slider.value}', ax = ax)
+    # plt.show()
 
 
 # #%% old functions

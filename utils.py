@@ -1,6 +1,52 @@
 import numpy as np
+import pandas as pd
 import contextlib
 import io
+from spks.event_aligned import compute_firing_rate
+
+@contextlib.contextmanager
+def suppress_print():
+    """ Suppress print statements when not needed """
+    with contextlib.redirect_stdout(io.StringIO()):
+        yield
+
+def detect_stim_events(time_vector, srate, analog_signal, amp_threshold = 5000, time_threshold = 0.04):
+    """ Detect visual stimulus events from the nidaq analog signal """
+    ii = np.where(np.diff(analog_signal>amp_threshold)==1)[0]
+    return time_vector[ii[np.diff(np.hstack([0,ii]))>time_threshold*srate]]
+
+def get_trial_ts(trial_starts : np.array, stim_ts : np.array, behavior_data : pd.DataFrame, port_events : dict) -> pd.DataFrame:
+    """ Get a DataFrame with all the task events divided by trials """
+    trial_ts = []
+
+    for ti in range(len(trial_starts) - 1):
+        start_time = trial_starts[ti]
+        end_time = trial_starts[ti + 1]
+
+        # get all stim ts in a given trial
+        stim_events_in_interval = stim_ts[(stim_ts > start_time) & (stim_ts < end_time)]
+
+        # get the first stim ts
+        first_stim_ts = np.nan
+        if len(stim_events_in_interval) > 0:
+            first_stim_ts = stim_events_in_interval[0]
+        
+        trial_data = {
+            "trial_rate": len(behavior_data.stimulus_event_timestamps[ti]),
+            "detected_events": len(stim_events_in_interval),
+            "trial_start": trial_starts[ti],
+            "stim_ts": stim_events_in_interval,
+            "first_stim_ts": first_stim_ts,
+            "trial_outcome": behavior_data.outcome_record[ti]
+        }
+
+        for port_name, events in port_events.items():
+            trial_data[f"{port_name}_entries"] = events["entries"][(events["entries"] > start_time) & (events["entries"] < end_time)]
+            trial_data[f"{port_name}_exits"] = events["exits"][(events["exits"] > start_time) & (events["exits"] < end_time)]
+        
+        trial_ts.append(trial_data)
+    
+    return pd.DataFrame(trial_ts)
 
 def get_cluster_spike_times(spike_times, spike_clusters, good_unit_ids):
     """ get the spike times for each cluster individually """
@@ -34,16 +80,50 @@ def get_good_units(clusters_obj, spike_clusters):
 
     return good_unit_ids, n_units
 
+def get_population_firing_rate(event_times, spike_times, tpre, tpost, binwidth_ms, kernel=None):
+    unit_fr = []
+    with suppress_print():
+        for i in range(len(spike_times)):
+            try:
+                unit_fr.append(compute_firing_rate(event_times, spike_times[i], tpre, tpost, binwidth_ms, kernel=kernel)[0])
+            except:
+                unit_fr.append(np.nan)
+    psth = np.mean(unit_fr, axis = 0)
+
+    return psth
+
 def compute_mean_sem(psth):
     return np.mean(psth, axis=0), np.std(psth, axis=0) / np.sqrt(psth.shape[0])
 
 def get_nth_element(x, i):
+    """ Used for getting the n-th event in an array 
+    
+    Example usage:
+    for i, ax in enumerate(axs):
+        for outcome, c in zip(np.unique(stim_ts_per_trial.trial_outcome), ['b', 'k', 'r', 'y']):
+            ts = np.hstack(stim_ts_per_trial[stim_ts_per_trial.trial_outcome == outcome].stim_ts.apply(lambda x: get_nth_element(x, i)))
+    """
     if len(x) > i and not np.isnan(x[0]):
         return x[i]
     return np.nan
 
-@contextlib.contextmanager
-def suppress_print():
-    """ suppress print statements """
-    with contextlib.redirect_stdout(io.StringIO()):
-        yield
+def get_response_ts(row):
+    """ Get the timestamp of when the animal responded, regardless of which side it was 
+    Example usage:
+    trial_ts.insert(trial_ts.shape[1], 'response', trial_ts.apply(get_response_ts, axis=1))
+    """
+    w = row['center_port_exits'][-1]  # withdrawal time
+    left = [entry for entry in row['left_port_entries'] if entry > w]
+    right = [entry for entry in row['right_port_entries'] if entry > w]
+    
+    # get the first valid value or None if empty
+    left = left[0] if left else None
+    right = right[0] if right else None
+    
+    # return the first valid (non-NaN) value
+    if pd.notna(left):
+        return left
+    elif pd.notna(right):
+        return right
+    else:
+        return None

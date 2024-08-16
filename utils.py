@@ -109,7 +109,9 @@ def get_population_firing_rate(event_times, spike_times, tpre, tpost, binwidth_m
             psth = moving_average(psth, window_size_bins)
         elif psth.ndim == 2:
             psth = np.array([moving_average(row, window_size_bins) for row in psth])
-    
+
+        unit_fr = np.array([moving_average(np.mean(row, axis = 0), window_size_bins) for row in unit_fr])
+
     return psth, unit_fr
 
 def compute_mean_sem(psth : np.array):

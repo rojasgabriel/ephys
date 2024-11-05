@@ -40,26 +40,9 @@ def detect_stim_events(time_vector, srate, analog_signal, amp_threshold=5000, ti
     ii = np.where(np.diff(analog_signal>amp_threshold)==1)[0]
     return time_vector[ii[np.diff(np.hstack([0,ii]))>time_threshold*srate]]
 
-def get_trial_ts(trial_starts: np.array, stim_ts: np.array, behavior_data: pd.DataFrame, port_events: dict) -> pd.DataFrame:
-    """ 
-    Get a DataFrame with all the task events divided by trials.
-    
-    Parameters:
-    -----------
-    trial_starts : np.array
-        Timestamps of the trial starts.
-    stim_ts : np.array
-        Timestamps of the stimulus events.
-    behavior_data : pd.DataFrame
-        DataFrame with the behavior data.
-    port_events : dict
-        Dictionary with the port events.
-
-    Returns:
-    --------
-    pd.DataFrame
-        DataFrame with the trial events.
-    """
+def get_trial_ts(trial_starts : np.array, stim_ts : np.array, behavior_data : pd.DataFrame, port_events : dict = None) -> pd.DataFrame:
+    """ Get a DataFrame with all the task events divided by trials """
+    trial_ts = []
     trial_data = []
     
     # Vectorized operations for stim events
@@ -79,6 +62,11 @@ def get_trial_ts(trial_starts: np.array, stim_ts: np.array, behavior_data: pd.Da
             "first_stim_ts": stim_events_in_interval[0] if len(stim_events_in_interval) > 0 else np.nan,
             "trial_outcome": behavior_data.outcome_record[ti]
         }
+
+        if port_events is not None:
+            for port_name, events in port_events.items():
+                trial_data[f"{port_name}_entries"] = events["entries"][np.logical_and(events["entries"] > start_time, events["entries"] < end_time)]
+                trial_data[f"{port_name}_exits"] = events["exits"][np.logical_and(events["exits"] > start_time, events["exits"] < end_time)]
         
         # Vectorized operations for port events
         for port_name, events in port_events.items():
@@ -140,34 +128,19 @@ def get_good_units(clusters_obj, spike_clusters):
 
     return good_unit_ids, n_units
 
-def get_population_firing_rate(event_times, spike_times, tpre, tpost, binwidth_ms, kernel=None, window_ms=None):
-    """
-    Calculate population firing rate and optionally apply smoothing.
+# def get_population_firing_rate(event_times, spike_times, tpre, tpost, binwidth_ms, kernel=None):
+#     unit_fr = []
+#     with suppress_print():
+#         for i in range(len(spike_times)):
+#             try:
+#                 unit_fr.append(compute_firing_rate(event_times, spike_times[i], tpre, tpost, binwidth_ms, kernel=kernel)[0])
+#             except:
+#                 unit_fr.append(np.nan)
+#     psth = np.mean(unit_fr, axis = 0)
 
-    Parameters:
-    -----------
-    event_times : array-like
-        Timestamps of events.
-    spike_times : list of array-like
-        List of spike times for each unit.
-    tpre : float
-        Time before event to include in calculation.
-    tpost : float
-        Time after event to include in calculation.
-    binwidth_ms : float
-        Width of time bins in milliseconds.
-    kernel : array-like, optional
-        Kernel for smoothing (default is None).
-    window_ms : float, optional
-        Window size for moving average in milliseconds (default is None).
+#     return psth
 
-    Returns:
-    --------
-    psth : array-like
-        Population firing rate (PSTH).
-    unit_fr : array-like
-        Firing rates for individual units.
-    """
+def get_population_firing_rate(event_times, spike_times, tpre, tpost, binwidth_ms, kernel=None, window_ms=None, normalize=False):
     unit_fr = []
     with suppress_print():
         for i in range(len(spike_times)):
@@ -185,7 +158,14 @@ def get_population_firing_rate(event_times, spike_times, tpre, tpost, binwidth_m
         elif psth.ndim == 2:
             psth = np.array([centered_moving_average(row, window_size_bins) for row in psth])
 
-        unit_fr = np.array([centered_moving_average(np.mean(row, axis=0), window_size_bins) for row in unit_fr])
+        unit_fr = np.array([moving_average(np.mean(row, axis = 0), window_size_bins) for row in unit_fr])
+    else:  
+        unit_fr = np.array([np.mean(row, axis = 0) for row in unit_fr])
+        unit_fr = np.array([unit for unit in unit_fr if not unit.all() == 0])
+
+    if normalize:
+        norm_fr = np.array([unit/unit.max() for unit in unit_fr if not unit.all() == 0])
+        return np.mean(norm_fr, axis=0), norm_fr
 
     return psth, unit_fr
 
@@ -284,22 +264,10 @@ def get_stationary_stims(row, max_tseconds = 0.4):
     return row.stim_ts[row.stim_ts < row.first_stim_ts + max_tseconds]
 
 def get_movement_stims(row, max_tseconds = 0.4):
-    """
-    Get stimulus timestamps that occur during the movement period of a trial.
-
-    Parameters:
-    -----------
-    row : pd.Series
-        A row from a DataFrame containing stimulus timestamps and center port exit times.
-    max_tseconds : float, optional
-        Maximum time in seconds to consider for movement period (default is 0.4).
-
-    Returns:
-    --------
-    array-like
-        Stimulus timestamps within the movement period.
-    """
-    return row.stim_ts[np.logical_and(row.center_port_exits[-1] < row.stim_ts, row.stim_ts < row.center_port_exits[-1] + max_tseconds)]
+    if 'center_port_exits' in row.index:
+        return row.stim_ts[np.logical_and(row.center_port_exits[-1] < row.stim_ts, row.stim_ts < row.center_port_exits[-1] + max_tseconds)]
+    else:
+        return row.stim_ts[np.logical_and(row.first_stim_ts + 0.5 < row.stim_ts, row.stim_ts < row.first_stim_ts + 0.5 + max_tseconds)]
 
 def moving_average(data, window_size):
     """

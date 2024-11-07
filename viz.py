@@ -11,7 +11,7 @@ def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, window_ms=N
     mean, sem = mean_sem_func
     x = np.arange(-pre_seconds, post_seconds, binwidth_ms / 1000)
 
-    if window_ms:
+    if window_ms is not None:
         window_size_bins = int(window_ms / binwidth_ms)
         if window_size_bins >= len(x):
             raise ValueError("Smoothing window is too large compared to the data length.")
@@ -69,10 +69,18 @@ def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, pos
 
     # Update plot when slider value changes
     def on_slider_value_change(change):
+        ax = plt.gca()
         ax.clear()
         with suppress_print():
             psth, _ = compute_firing_rate(event_times, single_unit_timestamps[slider.value], pre_seconds, post_seconds, binwidth_ms)
-        plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{fig_title}\niunit: {slider.value}', ax = ax)
+        plot_psth(mean_sem_func = compute_mean_sem(psth), 
+                  pre_seconds = pre_seconds, 
+                  post_seconds = post_seconds, 
+                  binwidth_ms = binwidth_ms,
+                  xlabel = 'time from event (s)', 
+                  ylabel = 'sp/s', 
+                  fig_title = f'{fig_title}\niunit: {slider.value}', 
+                  ax = ax)
         plt.draw()  # Ensure the plot is updated
 
     slider.observe(on_slider_value_change, names='value')
@@ -83,7 +91,14 @@ def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, pos
     # Initial plot
     with suppress_print():
         psth, _ = compute_firing_rate(event_times, single_unit_timestamps[slider.value], pre_seconds, post_seconds, binwidth_ms)
-    plot_psth(compute_mean_sem(psth), pre_seconds, post_seconds, binwidth_ms, 'time from event (s)', 'spike rate (Hz)', f'{fig_title}\niunit: {slider.value}', ax = ax)
+    plot_psth(mean_sem_func = compute_mean_sem(psth), 
+            pre_seconds = pre_seconds, 
+            post_seconds = post_seconds, 
+            binwidth_ms = binwidth_ms,
+            xlabel = 'time from event (s)', 
+            ylabel = 'sp/s', 
+            fig_title = f'{fig_title}\niunit: {slider.value}', 
+            ax = ax)
     # plt.show()
 
 

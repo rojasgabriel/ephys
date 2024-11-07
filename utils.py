@@ -64,16 +64,16 @@ def get_trial_ts(trial_starts : np.array, stim_ts : np.array, behavior_data : pd
         }
 
         if port_events is not None:
-            for port_name, events in port_events.items():
-                trial_data[f"{port_name}_entries"] = events["entries"][np.logical_and(events["entries"] > start_time, events["entries"] < end_time)]
-                trial_data[f"{port_name}_exits"] = events["exits"][np.logical_and(events["exits"] > start_time, events["exits"] < end_time)]
+            # for port_name, events in port_events.items():
+            #     trial_data[f"{port_name}_entries"] = events["entries"][np.logical_and(events["entries"] > start_time, events["entries"] < end_time)]
+            #     trial_data[f"{port_name}_exits"] = events["exits"][np.logical_and(events["exits"] > start_time, events["exits"] < end_time)]
         
-        # Vectorized operations for port events
-        for port_name, events in port_events.items():
-            for event_type in ['entries', 'exits']:
-                event_times = events[event_type]
-                mask = (event_times > start_time) & (event_times < end_time)
-                trial_dict[f"{port_name}_{event_type}"] = event_times[mask]
+            # Vectorized operations for port events
+            for port_name, events in port_events.items():
+                for event_type in ['entries', 'exits']:
+                    event_times = events[event_type]
+                    mask = (event_times > start_time) & (event_times < end_time)
+                    trial_dict[f"{port_name}_{event_type}"] = event_times[mask]
         
         trial_data.append(trial_dict)
     
@@ -212,24 +212,12 @@ def get_nth_element(x, i):
     return np.nan
 
 def get_response_ts(row):
-    """ 
-    Get the timestamp of when the animal responded, regardless of which side it was.
-    
-    Parameters:
-    -----------
-    row : pd.Series
-        A row from a DataFrame containing port entry and exit times.
-    
-    Returns:
-    --------
-    float or None
-        Timestamp of the animal's response, or None if no valid response.
-    
-    Example usage:
-    --------------
-    trial_ts.insert(trial_ts.shape[1], 'response', trial_ts.apply(get_response_ts, axis=1))
-    """
-    w = row['center_port_exits'][-1]  # withdrawal time
+    """ Get the timestamp of when the animal responded, regardless of which side it was """
+    try:
+        w = row['center_port_exits'][-1]  # withdrawal time
+    except:
+        w = None
+
     left = [entry for entry in row['left_port_entries'] if entry > w]
     right = [entry for entry in row['right_port_entries'] if entry > w]
     
@@ -265,7 +253,8 @@ def get_stationary_stims(row, max_tseconds = 0.4):
 
 def get_movement_stims(row, max_tseconds = 0.4):
     if 'center_port_exits' in row.index:
-        return row.stim_ts[np.logical_and(row.center_port_exits[-1] < row.stim_ts, row.stim_ts < row.center_port_exits[-1] + max_tseconds)]
+        if row.center_port_exits.size != 0:
+            return row.stim_ts[np.logical_and(row.center_port_exits[-1] < row.stim_ts, row.stim_ts < row.center_port_exits[-1] + max_tseconds)]
     else:
         return row.stim_ts[np.logical_and(row.first_stim_ts + 0.5 < row.stim_ts, row.stim_ts < row.first_stim_ts + 0.5 + max_tseconds)]
 

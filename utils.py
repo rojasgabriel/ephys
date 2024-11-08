@@ -121,7 +121,8 @@ def get_good_units(clusters_obj, spike_clusters):
             & (clusters_obj.cluster_info.amplitude_cutoff < 0.1) 
             & (clusters_obj.cluster_info.isi_contamination < 0.1)
             & (clusters_obj.cluster_info.presence_ratio >= 0.6)
-            & (clusters_obj.cluster_info.spike_duration > 0.1))
+            & (clusters_obj.cluster_info.spike_duration > 0.1)
+            & (clusters_obj.cluster_info.firing_rate > 1)) #added this filter myself
 
     good_unit_ids = np.isin(spike_clusters,clusters_obj.cluster_info[mask].cluster_id.values)
     n_units = len(clusters_obj.cluster_info[mask])

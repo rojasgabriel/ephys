@@ -4,16 +4,10 @@
 			"path": "."
 		},
 		{
-			"path": "../../../../data/GRB006/20240429_174359"
-		},
-		{
-			"path": "../../../../joao/lib/spks"
-		},
-		{
 			"path": "../../chiCa"
 		},
 		{
-			"path": "../chipmunk_behavior"
+			"path": "../../spks"
 		}
 	],
 	"settings": {},

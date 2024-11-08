@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import contextlib
 import io
-from spks.event_aligned import compute_firing_rate
+# from spks.event_aligned import compute_firing_rate
 
 @contextlib.contextmanager
 def suppress_print():
@@ -127,18 +127,6 @@ def get_good_units(clusters_obj, spike_clusters):
     n_units = len(clusters_obj.cluster_info[mask])
 
     return good_unit_ids, n_units
-
-# def get_population_firing_rate(event_times, spike_times, tpre, tpost, binwidth_ms, kernel=None):
-#     unit_fr = []
-#     with suppress_print():
-#         for i in range(len(spike_times)):
-#             try:
-#                 unit_fr.append(compute_firing_rate(event_times, spike_times[i], tpre, tpost, binwidth_ms, kernel=kernel)[0])
-#             except:
-#                 unit_fr.append(np.nan)
-#     psth = np.mean(unit_fr, axis = 0)
-
-#     return psth
 
 def get_population_firing_rate(event_times, spike_times, tpre, tpost, binwidth_ms, kernel=None, window_ms=None, normalize=False):
     unit_fr = []

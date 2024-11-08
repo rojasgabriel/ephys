@@ -4,7 +4,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from os.path import join as pjoin
-from spks.event_aligned import compute_firing_rate
+# from spks.event_aligned import compute_firing_rate
 from utils import get_cluster_spike_times, compute_mean_sem, suppress_print
 
 def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, window_ms=None, xlabel=None, ylabel=None, fig_title=None, data_label=None, color='b', ax=None, tight=True, vline=True):

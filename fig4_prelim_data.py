@@ -11,6 +11,7 @@ from spks.event_aligned import population_peth
 from chiCa.chiCa.visualization_utils import separate_axes
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+
 new_rc_params = {'text.usetex': False,
 "svg.fonttype": 'none'
 }

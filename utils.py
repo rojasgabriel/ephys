@@ -2,47 +2,78 @@ import numpy as np
 import pandas as pd
 import contextlib
 import io
-# from spks.event_aligned import compute_firing_rate
+import spks
+import chiCa.chiCa as chiCa
+from os.path import join as pjoin
+import scipy
 
-@contextlib.contextmanager
-def suppress_print():
-    """ 
-    Suppress print statements when not needed.
-    
-    This context manager redirects stdout to a StringIO object,
-    effectively suppressing any print statements within its scope.
-    """
-    with contextlib.redirect_stdout(io.StringIO()):
-        yield
+### 1. CORE DATA LOADING ###
+def load_sync_data(sessionpath, sync_port=0):
+    print('Loading nisync data...')
+    (nionsets,nioffsets),(nisync,nimeta),(apsyncdata) = spks.sync.load_ni_sync_data(sessionpath=sessionpath)
+    aponsets = apsyncdata[0]['file0_sync_onsets'][6]
 
-def detect_stim_events(time_vector, srate, analog_signal, amp_threshold=5000, time_threshold=0.04):
-    """ 
-    Detect visual stimulus events from the nidaq analog signal.
-    
-    Parameters:
-    -----------
-    time_vector : array-like
-        The time points corresponding to the analog signal.
-    srate : float
-        Sampling rate of the analog signal.
-    analog_signal : array-like
-        The analog signal containing stimulus events.
-    amp_threshold : float, optional
-        Amplitude threshold for detecting events (default is 5000).
-    time_threshold : float, optional
-        Time threshold in seconds for considering consecutive events (default is 0.04).
-    
-    Returns:
-    --------
-    array-like
-        Timestamps of detected stimulus events.
-    """
-    ii = np.where(np.diff(analog_signal>amp_threshold)==1)[0]
-    return time_vector[ii[np.diff(np.hstack([0,ii]))>time_threshold*srate]]
+    corrected_onsets = {}
+    corrected_offsets = {}
+    for k in nionsets.keys():
+        corrected_onsets[k] = spks.sync.interp1d(nionsets[sync_port],aponsets,fill_value='extrapolate')(nionsets[k]).astype('uint64')
+        corrected_offsets[k] = spks.sync.interp1d(nionsets[sync_port],aponsets,fill_value='extrapolate')(nioffsets[k]).astype('uint64')
+    del k
 
-def get_trial_ts(trial_starts : np.array, stim_ts : np.array, behavior_data : pd.DataFrame, port_events : dict = None) -> pd.DataFrame:
-    """ Get a DataFrame with all the task events divided by trials """
-    trial_ts = []
+    nitime = spks.sync.interp1d(nionsets[sync_port],aponsets,fill_value='extrapolate')(np.arange(len(nisync)))
+    srate = apsyncdata[0]['sampling_rate']
+    t = nitime/srate
+    frame_rate = scipy.stats.mode(1/(np.diff(corrected_onsets[1])/srate))
+    analog_signal = nisync[:, 0]
+    print('Success!\n-----')
+    
+    return corrected_onsets, corrected_offsets, t, srate, analog_signal
+
+def process_port_events(corrected_onsets, corrected_offsets, srate):
+    print('Loading nidaq events...')
+    trial_starts = corrected_onsets[2]/srate
+    
+    if len(corrected_onsets.keys()) <= 3:
+        print('No port events registered in this session. Proceeding without them...')
+        return trial_starts, None
+        
+    print('Port events found. Proceeding with extracting them...')
+    port_events = {
+        "center_port": {
+            "entries": corrected_onsets[4]/srate,
+            "exits": corrected_offsets[4]/srate
+        },
+        "left_port": {
+            "entries": corrected_onsets[3]/srate,
+            "exits": corrected_offsets[3]/srate
+        },
+        "right_port": {
+            "entries": corrected_onsets[5]/srate,
+            "exits": corrected_offsets[5]/srate
+        }
+    }
+    
+    return trial_starts, port_events
+
+def process_trial_data(sessionpath, trial_starts, t, srate, analog_signal, port_events, animal, session):
+    behavior_data = chiCa.load_trialdata(pjoin(sessionpath, f'chipmunk/{animal}_{session}_chipmunk_DemonstratorAudiTask.mat'))
+    
+    if port_events is None:
+        trial_ts = get_trial_ts(trial_starts, detect_stim_events(t, srate, analog_signal, amp_threshold=5000), behavior_data)
+    else:
+        trial_ts = get_trial_ts(trial_starts, detect_stim_events(t, srate, analog_signal, amp_threshold=5000), behavior_data, port_events)
+        trial_ts.insert(trial_ts.shape[1], 'response', trial_ts.apply(get_response_ts, axis=1))
+        
+    trial_ts.insert(trial_ts.shape[1], 'stationary_stims', trial_ts.apply(get_stationary_stims, axis=1))
+    trial_ts.insert(trial_ts.shape[1], 'movement_stims', trial_ts.apply(get_movement_stims, axis=1))
+
+    trial_ts.insert(0, 'category', trial_ts.apply(lambda x: 'left' if x.trial_rate < 12 else ('right' if x.trial_rate > 12 else 'boundary'), axis=1))
+    
+    print('Success!')
+    return behavior_data, trial_ts
+
+### 2. TRIAL & EVENT PROCESSING ###
+def get_trial_ts(trial_starts, stim_ts, behavior_data, port_events=None):
     trial_data = []
     
     # Vectorized operations for stim events
@@ -60,14 +91,13 @@ def get_trial_ts(trial_starts : np.array, stim_ts : np.array, behavior_data : pd
             "trial_start": start_time,
             "stim_ts": stim_events_in_interval,
             "first_stim_ts": stim_events_in_interval[0] if len(stim_events_in_interval) > 0 else np.nan,
+            "stimulus_modality": behavior_data.stimulus_modality[ti],
+            "response_side": behavior_data.response_side[ti],
+            "correct_side": behavior_data.correct_side[ti],
             "trial_outcome": behavior_data.outcome_record[ti]
         }
 
         if port_events is not None:
-            # for port_name, events in port_events.items():
-            #     trial_data[f"{port_name}_entries"] = events["entries"][np.logical_and(events["entries"] > start_time, events["entries"] < end_time)]
-            #     trial_data[f"{port_name}_exits"] = events["exits"][np.logical_and(events["exits"] > start_time, events["exits"] < end_time)]
-        
             # Vectorized operations for port events
             for port_name, events in port_events.items():
                 for event_type in ['entries', 'exits']:
@@ -79,44 +109,71 @@ def get_trial_ts(trial_starts : np.array, stim_ts : np.array, behavior_data : pd
     
     return pd.DataFrame(trial_data)
 
+def get_balanced_trials(trial_ts, require_both_stim_types=True):
+    # Get valid trials (exclude early withdrawals)
+    valid_trials = trial_ts[trial_ts.trial_outcome.isin([0,1])]
+    
+    # Optionally require both stim types
+    if require_both_stim_types:
+        valid_trials = valid_trials[
+            (valid_trials.movement_stims.apply(len) > 0) & 
+            (valid_trials.stationary_stims.apply(len) > 0)
+        ]
+    
+    # Find minimum number of trials between conditions
+    min_trials = min(
+        len(valid_trials[valid_trials.trial_outcome == 1]),
+        len(valid_trials[valid_trials.trial_outcome == 0])
+    )
+    
+    # Sample equal numbers from each condition
+    balanced_trials = pd.concat([
+        valid_trials[valid_trials.trial_outcome == 1].sample(n=min_trials, random_state=42),
+        valid_trials[valid_trials.trial_outcome == 0].sample(n=min_trials, random_state=42)
+    ])
+    
+    return balanced_trials, min_trials
+
+def detect_stim_events(time_vector, srate, analog_signal, amp_threshold=5000, time_threshold=0.04):
+    ii = np.where(np.diff(analog_signal>amp_threshold)==1)[0]
+    return time_vector[ii[np.diff(np.hstack([0,ii]))>time_threshold*srate]]
+
+def get_response_ts(row):
+    try:
+        w = row['center_port_exits'][-1]  # withdrawal time
+    except:
+        w = None
+
+    left = [entry for entry in row['left_port_entries'] if entry > w]
+    right = [entry for entry in row['right_port_entries'] if entry > w]
+    
+    # get the first valid value or None if empty
+    left = left[0] if left else None
+    right = right[0] if right else None
+    
+    # return the first valid (non-NaN) value
+    if pd.notna(left):
+        return left
+    elif pd.notna(right):
+        return right
+    else:
+        return None
+
+def get_stationary_stims(row, max_tseconds=0.4):
+    return row.stim_ts[row.stim_ts < row.first_stim_ts + max_tseconds]
+
+def get_movement_stims(row, max_tseconds=0.4):
+    if 'center_port_exits' in row.index:
+        if row.center_port_exits.size != 0:
+            return row.stim_ts[np.logical_and(row.center_port_exits[-1] < row.stim_ts, row.stim_ts < row.center_port_exits[-1] + max_tseconds)]
+    else:
+        return row.stim_ts[np.logical_and(row.first_stim_ts + 0.5 < row.stim_ts, row.stim_ts < row.first_stim_ts + 0.5 + max_tseconds)]
+
+### 3. NEURAL DATA PROCESSING ###
 def get_cluster_spike_times(spike_times, spike_clusters, good_unit_ids):
-    """ 
-    Get the spike times for each cluster individually.
-    
-    Parameters:
-    -----------
-    spike_times : array-like
-        Array of all spike times.
-    spike_clusters : array-like
-        Array of cluster IDs for each spike.
-    good_unit_ids : array-like
-        Array of IDs for good units.
-    
-    Returns:
-    --------
-    list
-        List of spike times for each good cluster.
-    """
     return [spike_times[good_unit_ids][spike_clusters[good_unit_ids] == uclu] for uclu in np.unique(spike_clusters[good_unit_ids])]
 
 def get_good_units(clusters_obj, spike_clusters):
-    """ 
-    Filter Kilosort results using criteria specified in Melin et al. 2024.
-
-    Parameters:
-    -----------
-    clusters_obj : object from spks.clusters.Clusters
-        Object to access spike sorting results.
-    spike_clusters : ndarray
-        Spike clusters output from Kilosort (i.e. "../spike_clusters.npy").
-
-    Returns:
-    --------
-    good_unit_ids : boolean ndarray
-        Boolean array where True means that a recorded spike corresponded to a filtered spike cluster.
-    n_units : int
-        Number of single units filtered.
-    """
     mask = ((np.abs(clusters_obj.cluster_info.trough_amplitude - clusters_obj.cluster_info.peak_amplitude) > 50)
             & (clusters_obj.cluster_info.amplitude_cutoff < 0.1) 
             & (clusters_obj.cluster_info.isi_contamination < 0.1)
@@ -129,50 +186,35 @@ def get_good_units(clusters_obj, spike_clusters):
 
     return good_unit_ids, n_units
 
-def get_population_firing_rate(event_times, spike_times, tpre, tpost, binwidth_ms, kernel=None, window_ms=None, normalize=False):
-    unit_fr = []
-    with suppress_print():
-        for i in range(len(spike_times)):
-            try:
-                unit_fr.append(compute_firing_rate(event_times, spike_times[i], tpre, tpost, binwidth_ms, kernel=kernel)[0])
-            except:
-                unit_fr.append(np.nan)
+### 4. GENERAL UTILITIES ###
+@contextlib.contextmanager
+def suppress_print():
+    """ 
+    Suppress print statements when not needed.
     
-    psth = np.mean(unit_fr, axis=0)
-
-    if window_ms:
-        window_size_bins = int(window_ms / binwidth_ms)
-        if psth.ndim == 1:
-            psth = centered_moving_average(psth, window_size_bins)
-        elif psth.ndim == 2:
-            psth = np.array([centered_moving_average(row, window_size_bins) for row in psth])
-
-        unit_fr = np.array([moving_average(np.mean(row, axis = 0), window_size_bins) for row in unit_fr])
-    else:  
-        unit_fr = np.array([np.mean(row, axis = 0) for row in unit_fr])
-        unit_fr = np.array([unit for unit in unit_fr if not unit.all() == 0])
-
-    if normalize:
-        norm_fr = np.array([unit/unit.max() for unit in unit_fr if not unit.all() == 0])
-        return np.mean(norm_fr, axis=0), norm_fr
-
-    return psth, unit_fr
-
-def compute_mean_sem(psth : np.array):
+    This context manager redirects stdout to a StringIO object,
+    effectively suppressing any print statements within its scope.
     """
-    Compute mean and standard error of the mean for a given PSTH.
+    with contextlib.redirect_stdout(io.StringIO()):
+        yield
+
+def moving_average(data, window_size):
+    """
+    Calculate the moving average of a 1D array.
 
     Parameters:
     -----------
-    psth : np.array
-        Population spike time histogram.
+    data : array-like
+        Input data.
+    window_size : int
+        Size of the moving window.
 
     Returns:
     --------
-    tuple
-        Mean and standard error of the mean of the PSTH.
+    array-like
+        Moving average of the input data.
     """
-    return np.mean(psth, axis=0), np.std(psth, axis=0) / np.sqrt(psth.shape[0])
+    return np.convolve(data, np.ones(window_size), 'valid') / window_size
 
 def get_nth_element(x, i):
     """ 
@@ -199,87 +241,3 @@ def get_nth_element(x, i):
     if len(x) > i and not np.isnan(x[0]):
         return x[i]
     return np.nan
-
-def get_response_ts(row):
-    """ Get the timestamp of when the animal responded, regardless of which side it was """
-    try:
-        w = row['center_port_exits'][-1]  # withdrawal time
-    except:
-        w = None
-
-    left = [entry for entry in row['left_port_entries'] if entry > w]
-    right = [entry for entry in row['right_port_entries'] if entry > w]
-    
-    # get the first valid value or None if empty
-    left = left[0] if left else None
-    right = right[0] if right else None
-    
-    # return the first valid (non-NaN) value
-    if pd.notna(left):
-        return left
-    elif pd.notna(right):
-        return right
-    else:
-        return None
-
-def get_stationary_stims(row, max_tseconds = 0.4):
-    """
-    Get stimulus timestamps that occur during the stationary period of a trial.
-
-    Parameters:
-    -----------
-    row : pd.Series
-        A row from a DataFrame containing stimulus timestamps and first stimulus time.
-    max_tseconds : float, optional
-        Maximum time in seconds to consider for stationary period (default is 0.4).
-
-    Returns:
-    --------
-    array-like
-        Stimulus timestamps within the stationary period.
-    """
-    return row.stim_ts[row.stim_ts < row.first_stim_ts + max_tseconds]
-
-def get_movement_stims(row, max_tseconds = 0.4):
-    if 'center_port_exits' in row.index:
-        if row.center_port_exits.size != 0:
-            return row.stim_ts[np.logical_and(row.center_port_exits[-1] < row.stim_ts, row.stim_ts < row.center_port_exits[-1] + max_tseconds)]
-    else:
-        return row.stim_ts[np.logical_and(row.first_stim_ts + 0.5 < row.stim_ts, row.stim_ts < row.first_stim_ts + 0.5 + max_tseconds)]
-
-def moving_average(data, window_size):
-    """
-    Calculate the moving average of a 1D array.
-
-    Parameters:
-    -----------
-    data : array-like
-        Input data.
-    window_size : int
-        Size of the moving window.
-
-    Returns:
-    --------
-    array-like
-        Moving average of the input data.
-    """
-    return np.convolve(data, np.ones(window_size), 'valid') / window_size
-
-def centered_moving_average(data, window_size):
-    """
-    Calculate the centered moving average of a 1D array.
-
-    Parameters:
-    -----------
-    data : array-like
-        Input data.
-    window_size : int
-        Size of the moving window.
-
-    Returns:
-    --------
-    array-like
-        Centered moving average of the input data.
-    """
-    cumsum = np.cumsum(np.insert(data, 0, 0)) 
-    return (cumsum[window_size:] - cumsum[:-window_size]) / window_size

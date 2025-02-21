@@ -7,6 +7,7 @@ Creates a 2x2 grid comparing first stimulus responses and movement vs stationary
 import numpy as np
 import pandas as pd
 from pathlib import Path
+from os.path import join as pjoin
 from spks.event_aligned import population_peth
 from chiCa.chiCa.visualization_utils import separate_axes
 import matplotlib.pyplot as plt
@@ -261,21 +262,21 @@ def plot_population_responses(trial_ts, spike_times_per_unit):
 def main():
     """Main function to load data and create plots."""
     # Load the data
-    save_dir = Path('processed_data')
+    # save_dir = Path('processed_data')
     animal = 'GRB006'  # example animal
-    session = '20240723_142451'  # example session
+    session = '20240814_154434'  # example session
     
-    data_dir = save_dir / animal / session
-    trial_ts = pd.read_pickle(data_dir / 'trial_ts.pkl')
-    spike_times_per_unit = np.load(data_dir / 'spike_times_per_unit.npy', allow_pickle=True)
+    data_dir = '/Volumes/grb_ephys/data'
+    trial_ts = pd.read_pickle(pjoin(data_dir, animal, session, "pre_processed", "trial_ts.pkl"))
+    spike_times_per_unit = np.load(pjoin(data_dir, animal, session, "pre_processed", "spike_times_per_unit.npy"), allow_pickle=True)
     
     # Create and save the figure
     fig = plot_population_responses(trial_ts, spike_times_per_unit)
     
     # Save the figure
-    fig_dir = Path('/Users/gabriel/lib/oqe-figures/')
+    fig_dir = Path('/Users/gabriel/lib/lab-projects/ephys/figures/')
     fig_dir.mkdir(parents=True, exist_ok=True)
-    fig.savefig(fig_dir / 'fig4_neural_activity.svg', format='svg')
+    fig.savefig(fig_dir / f'visual_scatters_{session}.svg', format='svg')
     plt.close(fig)
 
 if __name__ == '__main__':

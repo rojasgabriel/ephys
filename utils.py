@@ -6,6 +6,7 @@ import spks
 import chiCa.chiCa as chiCa
 from os.path import join as pjoin
 import scipy
+from glob import glob
 
 ### 1. CORE DATA LOADING ###
 def load_sync_data(sessionpath, sync_port=0):
@@ -56,7 +57,7 @@ def process_port_events(corrected_onsets, corrected_offsets, srate):
     return trial_starts, port_events
 
 def process_trial_data(sessionpath, trial_starts, t, srate, analog_signal, port_events, animal, session):
-    behavior_data = chiCa.load_trialdata(pjoin(sessionpath, f'chipmunk/{animal}_{session}_chipmunk_DemonstratorAudiTask.mat'))
+    behavior_data = chiCa.load_trialdata(glob(pjoin(sessionpath, f'chipmunk/{animal}_{session}_chipmunk_*.mat'))[0]) #TODO: test now with glob instead of hardcoding the DemonAudiTask name
     
     if port_events is None:
         trial_ts = get_trial_ts(trial_starts, detect_stim_events(t, srate, analog_signal, amp_threshold=5000), behavior_data)

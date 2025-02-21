@@ -8,28 +8,49 @@ from utils import load_sync_data, process_port_events, process_trial_data, get_g
 from tqdm import tqdm
 
 data_path = '/Volumes/grb_ephys/data'
-mice = []
-sessions = []
 mice_paths = glob(pjoin(data_path, "GRB*"))
 
 # Ask the user if they want to run the script in overwrite mode
 overwrite_mode = input("Do you want to run the script in overwrite mode? (y/n): ").strip().lower() == 'y'
 
+# Ask the user if they want to specify a particular mouse
+specific_mouse = input("Do you want to specify a particular mouse? (y/n): ").strip().lower() == 'y'
+
+selected_mouse = None
+selected_session = None
+
+if specific_mouse:
+    selected_mouse = input("Enter the mouse ID (e.g., GRB123): ").strip()
+    # Ask the user if they want to specify a particular session only if a mouse is specified
+    specific_session = input("Do you want to specify a particular session? (y/n): ").strip().lower() == 'y'
+    if specific_session:
+        selected_session = input("Enter the session ID (e.g., 20230101_123456): ").strip()
+else:
+    specific_session = None
+
 print("Finding mice directories...")
+mice = []
+sessions = {}
+
 for path in mice_paths:
     mouse_id = re.search(r"GRB\d+", os.path.basename(path)).group(0)
+    if specific_mouse and mouse_id != selected_mouse:
+        continue
     mice.append(mouse_id)
     print(f"Found mouse: {mouse_id}")
     session_paths = glob(f"{path}/*")
+    sessions[mouse_id] = []
 
     for session_path in session_paths:
         session_id = re.search(r"\d{8}_\d{6}", os.path.basename(session_path)).group(0)
-        sessions.append(session_id)
+        if specific_session and session_id != selected_session:
+            continue
+        sessions[mouse_id].append(session_id)
         print(f"Found session: {session_id}")
 
 print("Processing data for each mouse and session...")
 for mouse in mice:
-    for session in tqdm(sessions, desc=f"Processing sessions for {mouse}"):
+    for session in tqdm(sessions[mouse], desc=f"Processing sessions for {mouse}"):
         try:
             session_path = pjoin(data_path, mouse, session)
             save_dir = pjoin(data_path, mouse, session, 'pre_processed')

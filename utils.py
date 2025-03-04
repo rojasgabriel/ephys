@@ -161,7 +161,7 @@ def get_response_ts(row):
         return None
 
 def get_stationary_stims(row, max_tseconds=0.4):
-    return row.stim_ts[row.stim_ts < row.first_stim_ts + max_tseconds]
+    return row.stim_ts[row.stim_ts < row.first_stim_ts + max_tseconds] #why did I do this? 2/27 - GRB
 
 def get_movement_stims(row, max_tseconds=0.4):
     if 'center_port_exits' in row.index:

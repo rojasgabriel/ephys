@@ -264,9 +264,9 @@ def main():
     # Load the data
     # save_dir = Path('processed_data')
     animal = 'GRB006'  # example animal
-    session = '20240814_154434'  # example session
+    session = '20240702_134736'  # example session
     
-    data_dir = '/Volumes/grb_ephys/data'
+    data_dir = '/Users/gabriel/data'
     trial_ts = pd.read_pickle(pjoin(data_dir, animal, session, "pre_processed", "trial_ts.pkl"))
     spike_times_per_unit = np.load(pjoin(data_dir, animal, session, "pre_processed", "spike_times_per_unit.npy"), allow_pickle=True)
     
@@ -274,7 +274,7 @@ def main():
     fig = plot_population_responses(trial_ts, spike_times_per_unit)
     
     # Save the figure
-    fig_dir = Path('/Users/gabriel/lib/lab-projects/ephys/figures/')
+    fig_dir = Path(pjoin(data_dir, animal, session, "analysis"))
     fig_dir.mkdir(parents=True, exist_ok=True)
     fig.savefig(fig_dir / f'visual_scatters_{session}.svg', format='svg')
     plt.close(fig)

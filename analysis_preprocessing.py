@@ -8,6 +8,7 @@ from utils import load_sync_data, process_port_events, process_trial_data, get_g
 from tqdm import tqdm
 
 data_path = '/Volumes/grb_ephys/data'
+local_data_path = '/Users/gabriel/data'
 mice_paths = glob(pjoin(data_path, "GRB*"))
 
 # Ask the user if they want to run the script in overwrite mode
@@ -49,11 +50,24 @@ for path in mice_paths:
         print(f"Found session: {session_id}")
 
 print("Processing data for each mouse and session...")
+auto_mode = input(f"Do you want to run in auto mode? (y/n): ").strip().lower() == 'y'
+save_locally = input(f"Do you want to save the processed data in the home data folder? (y/n): ").strip().lower() == 'y' 
+
 for mouse in mice:
     for session in tqdm(sessions[mouse], desc=f"Processing sessions for {mouse}"):
+        base_path = local_data_path if save_locally else data_path
+        save_dir = pjoin(base_path, mouse, session, 'pre_processed')
+
+        if not auto_mode:
+            process_session = input(f"Do you want to process session {session}? (y/n): ").strip().lower() == 'y'
+            if not process_session:
+                print(f"Skipping session {session}.")
+                continue
+        
         try:
             session_path = pjoin(data_path, mouse, session)
-            save_dir = pjoin(data_path, mouse, session, 'pre_processed')
+
+
             spike_times_file = pjoin(save_dir, 'spike_times_per_unit.npy')
             trial_ts_file = pjoin(save_dir, 'trial_ts.pkl')
 

@@ -60,9 +60,22 @@ def process_trial_data(sessionpath, trial_starts, t, srate, analog_signal, port_
     behavior_data = chiCa.load_trialdata(glob(pjoin(sessionpath, f'chipmunk/{animal}_{session}_chipmunk_*.mat'))[0]) #TODO: test now with glob instead of hardcoding the DemonAudiTask name
     
     if port_events is None:
+        raise Warning('No port events found. Proceeding without them...')
         trial_ts = get_trial_ts(trial_starts, detect_stim_events(t, srate, analog_signal, amp_threshold=5000), behavior_data)
     else:
         trial_ts = get_trial_ts(trial_starts, detect_stim_events(t, srate, analog_signal, amp_threshold=5000), behavior_data, port_events)
+        trial_ts = trial_ts[trial_ts.trial_outcome != -1].copy()
+
+        for itrial, data in trial_ts.iterrows():
+            if len(data.center_port_entries) == 0:
+                continue
+            mask = (data.center_port_entries < data.first_stim_ts) #true if entry is before first stim onset. sometimes mice will briefly poke again in the center before reporting their choice
+            true_entry = data.center_port_entries[mask][-1] #get the last entry before stim onset since sometimes the first poke will not be long enough to be considered a valid entry
+            trial_ts.loc[itrial, 'center_port_entries'] = [true_entry] #replace the entries with the last entry before stim onset
+
+            mask = (data.center_port_exits > true_entry) #true if exit is after the last entry before stim onset
+            true_exit = data.center_port_exits[mask][0] #get the first exit after stim onset
+            trial_ts.loc[itrial, 'center_port_exits'] = [true_exit] #replace the exits with the first exit after stim onset
         trial_ts.insert(trial_ts.shape[1], 'response', trial_ts.apply(get_response_ts, axis=1))
         
     trial_ts.insert(trial_ts.shape[1], 'stationary_stims', trial_ts.apply(get_stationary_stims, axis=1))
@@ -111,6 +124,16 @@ def get_trial_ts(trial_starts, stim_ts, behavior_data, port_events=None):
     return pd.DataFrame(trial_data)
 
 def get_balanced_trials(trial_ts, require_both_stim_types=True):
+    """This balances the number of rewarded vs. unrewarded trials and makes sure that there are both stationary and movement stimuli in each trial
+
+    Args:
+        trial_ts (pandas dataframe): contains the trial data as well as the nidaq events
+        require_both_stim_types (bool, optional): require both stationary and movement stimuli in every trial. Defaults to True.
+
+    Returns:
+        pandas dataframe: balanced dataframe
+        int: minimum number of rewarded and unrewarded trials
+    """
     # Get valid trials (exclude early withdrawals)
     valid_trials = trial_ts[trial_ts.trial_outcome.isin([0,1])]
     
@@ -161,12 +184,12 @@ def get_response_ts(row):
         return None
 
 def get_stationary_stims(row, max_tseconds=0.4):
-    return row.stim_ts[row.stim_ts < row.first_stim_ts + max_tseconds] #why did I do this? 2/27 - GRB
+    return row.stim_ts[row.stim_ts < row.center_port_exits[0]]
 
 def get_movement_stims(row, max_tseconds=0.4):
-    if 'center_port_exits' in row.index:
-        if row.center_port_exits.size != 0:
-            return row.stim_ts[np.logical_and(row.center_port_exits[-1] < row.stim_ts, row.stim_ts < row.center_port_exits[-1] + max_tseconds)]
+    if 'center_port_exits' in row.index: #this check might be redundant 4/16/25
+        if len(row.center_port_exits) != 0:
+            return row.stim_ts[row.stim_ts > row.center_port_exits[0]]
     else:
         return row.stim_ts[np.logical_and(row.first_stim_ts + 0.5 < row.stim_ts, row.stim_ts < row.first_stim_ts + 0.5 + max_tseconds)]
 
@@ -180,7 +203,7 @@ def get_good_units(clusters_obj, spike_clusters):
             & (clusters_obj.cluster_info.isi_contamination < 0.1)
             & (clusters_obj.cluster_info.presence_ratio >= 0.6)
             & (clusters_obj.cluster_info.spike_duration > 0.1)
-            & (clusters_obj.cluster_info.firing_rate > 1)) #added this filter myself
+            & (clusters_obj.cluster_info.firing_rate > 2)) #added this filter myself. changed from 1 to 2 sp/s on 4/16/25
 
     good_unit_ids = np.isin(spike_clusters,clusters_obj.cluster_info[mask].cluster_id.values)
     n_units = len(clusters_obj.cluster_info[mask])

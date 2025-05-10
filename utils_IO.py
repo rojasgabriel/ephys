@@ -85,7 +85,6 @@ def process_trial_data(sessionpath, trial_starts, t, srate, analog_signal, port_
     print('Success!')
     return behavior_data, trial_ts
 
-
 def get_trial_ts(trial_starts, stim_ts, behavior_data, port_events=None):
     trial_data = []
     
@@ -122,8 +121,6 @@ def get_trial_ts(trial_starts, stim_ts, behavior_data, port_events=None):
     
     return pd.DataFrame(trial_data)
 
-
-
 def detect_stim_events(time_vector, srate, analog_signal, amp_threshold=5000, time_threshold=0.04):
     ii = np.where(np.diff(analog_signal>amp_threshold)==1)[0]
     return time_vector[ii[np.diff(np.hstack([0,ii]))>time_threshold*srate]]
@@ -149,7 +146,7 @@ def get_response_ts(row):
     else:
         return None
 
-def get_stationary_stims(row, max_tseconds=0.4):
+def get_stationary_stims(row):
     return row.stim_ts[row.stim_ts < row.center_port_exits[0]]
 
 def get_movement_stims(row, max_tseconds=0.4):
@@ -159,75 +156,3 @@ def get_movement_stims(row, max_tseconds=0.4):
     else:
         return row.stim_ts[np.logical_and(row.first_stim_ts + 0.5 < row.stim_ts, row.stim_ts < row.first_stim_ts + 0.5 + max_tseconds)]
 
-
-def get_cluster_spike_times(spike_times, spike_clusters, good_unit_ids):
-    return [spike_times[good_unit_ids][spike_clusters[good_unit_ids] == uclu] for uclu in np.unique(spike_clusters[good_unit_ids])]
-
-def get_good_units(clusters_obj, spike_clusters):
-    mask = ((np.abs(clusters_obj.cluster_info.trough_amplitude - clusters_obj.cluster_info.peak_amplitude) > 50)
-            & (clusters_obj.cluster_info.amplitude_cutoff < 0.1) 
-            & (clusters_obj.cluster_info.isi_contamination < 0.1)
-            & (clusters_obj.cluster_info.presence_ratio >= 0.6)
-            & (clusters_obj.cluster_info.spike_duration > 0.1)
-            & (clusters_obj.cluster_info.firing_rate > 2)) #added this filter myself. changed from 1 to 2 sp/s on 4/16/25
-
-    good_unit_ids = np.isin(spike_clusters,clusters_obj.cluster_info[mask].cluster_id.values)
-    n_units = len(clusters_obj.cluster_info[mask])
-
-    return good_unit_ids, n_units
-
-
-@contextlib.contextmanager
-def suppress_print():
-    """ 
-    Suppress print statements when not needed.
-    
-    This context manager redirects stdout to a StringIO object,
-    effectively suppressing any print statements within its scope.
-    """
-    with contextlib.redirect_stdout(io.StringIO()):
-        yield
-
-def moving_average(data, window_size):
-    """
-    Calculate the moving average of a 1D array.
-
-    Parameters:
-    -----------
-    data : array-like
-        Input data.
-    window_size : int
-        Size of the moving window.
-
-    Returns:
-    --------
-    array-like
-        Moving average of the input data.
-    """
-    return np.convolve(data, np.ones(window_size), 'valid') / window_size
-
-def get_nth_element(x, i):
-    """ 
-    Get the n-th event in an array.
-    
-    Parameters:
-    -----------
-    x : array-like
-        Input array.
-    i : int
-        Index of the element to retrieve.
-    
-    Returns:
-    --------
-    float or np.nan
-        The i-th element of x if it exists, otherwise np.nan.
-    
-    Example usage:
-    --------------
-    for i, ax in enumerate(axs):
-        for outcome, c in zip(np.unique(stim_ts_per_trial.trial_outcome), ['b', 'k', 'r', 'y']):
-            ts = np.hstack(stim_ts_per_trial[stim_ts_per_trial.trial_outcome == outcome].stim_ts.apply(lambda x: get_nth_element(x, i)))
-    """
-    if len(x) > i and not np.isnan(x[0]):
-        return x[i]
-    return np.nan

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/Users/gabriel/miniconda3/bin/python
 """
 Population response analysis for ephys data.
 Creates a 2x2 grid comparing first stimulus responses and movement vs stationary responses.

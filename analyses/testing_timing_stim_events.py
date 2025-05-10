@@ -1,4 +1,4 @@
-#!#!/Users/gabriel/miniconda3/bin/python
+#!/Users/gabriel/miniconda3/bin/python
 #%% Import libraries
 import pandas as pd
 import numpy as np

@@ -1,3 +1,5 @@
+#!/Users/gabriel/miniconda3/bin/python
+
 import numpy as np
 import os
 import re

@@ -8,7 +8,6 @@ from os.path import join as pjoin
 import scipy
 from glob import glob
 
-### 1. CORE DATA LOADING ###
 def load_sync_data(sessionpath, sync_port=0):
     print('Loading nisync data...')
     (nionsets,nioffsets),(nisync,nimeta),(apsyncdata) = spks.sync.load_ni_sync_data(sessionpath=sessionpath)
@@ -86,7 +85,7 @@ def process_trial_data(sessionpath, trial_starts, t, srate, analog_signal, port_
     print('Success!')
     return behavior_data, trial_ts
 
-### 2. TRIAL & EVENT PROCESSING ###
+
 def get_trial_ts(trial_starts, stim_ts, behavior_data, port_events=None):
     trial_data = []
     
@@ -123,40 +122,7 @@ def get_trial_ts(trial_starts, stim_ts, behavior_data, port_events=None):
     
     return pd.DataFrame(trial_data)
 
-def get_balanced_trials(trial_ts, require_both_stim_types=True):
-    """This balances the number of rewarded vs. unrewarded trials and makes sure that there are both stationary and movement stimuli in each trial
 
-    Args:
-        trial_ts (pandas dataframe): contains the trial data as well as the nidaq events
-        require_both_stim_types (bool, optional): require both stationary and movement stimuli in every trial. Defaults to True.
-
-    Returns:
-        pandas dataframe: balanced dataframe
-        int: minimum number of rewarded and unrewarded trials
-    """
-    # Get valid trials (exclude early withdrawals)
-    valid_trials = trial_ts[trial_ts.trial_outcome.isin([0,1])]
-    
-    # Optionally require both stim types
-    if require_both_stim_types:
-        valid_trials = valid_trials[
-            (valid_trials.movement_stims.apply(len) > 0) & 
-            (valid_trials.stationary_stims.apply(len) > 0)
-        ]
-    
-    # Find minimum number of trials between conditions
-    min_trials = min(
-        len(valid_trials[valid_trials.trial_outcome == 1]),
-        len(valid_trials[valid_trials.trial_outcome == 0])
-    )
-    
-    # Sample equal numbers from each condition
-    balanced_trials = pd.concat([
-        valid_trials[valid_trials.trial_outcome == 1].sample(n=min_trials, random_state=42),
-        valid_trials[valid_trials.trial_outcome == 0].sample(n=min_trials, random_state=42)
-    ])
-    
-    return balanced_trials, min_trials
 
 def detect_stim_events(time_vector, srate, analog_signal, amp_threshold=5000, time_threshold=0.04):
     ii = np.where(np.diff(analog_signal>amp_threshold)==1)[0]
@@ -193,7 +159,7 @@ def get_movement_stims(row, max_tseconds=0.4):
     else:
         return row.stim_ts[np.logical_and(row.first_stim_ts + 0.5 < row.stim_ts, row.stim_ts < row.first_stim_ts + 0.5 + max_tseconds)]
 
-### 3. NEURAL DATA PROCESSING ###
+
 def get_cluster_spike_times(spike_times, spike_clusters, good_unit_ids):
     return [spike_times[good_unit_ids][spike_clusters[good_unit_ids] == uclu] for uclu in np.unique(spike_clusters[good_unit_ids])]
 
@@ -210,7 +176,7 @@ def get_good_units(clusters_obj, spike_clusters):
 
     return good_unit_ids, n_units
 
-### 4. GENERAL UTILITIES ###
+
 @contextlib.contextmanager
 def suppress_print():
     """ 

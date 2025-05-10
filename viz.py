@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from os.path import join as pjoin
 # from spks.event_aligned import compute_firing_rate
-from utils import get_cluster_spike_times, compute_mean_sem, suppress_print
+# from ephys.utils import get_cluster_spike_times, compute_mean_sem, suppress_print
 
 def plot_psth(mean_sem_func, pre_seconds, post_seconds, binwidth_ms, window_ms=None, xlabel=None, ylabel=None, fig_title=None, data_label=None, color='b', ax=None, tight=True, vline=True):
     mean, sem = mean_sem_func
@@ -101,7 +101,6 @@ def individual_psth_viewer(event_times, single_unit_timestamps, pre_seconds, pos
             ax = ax)
     # plt.show()
 
-
 def plot_cluster_info_histograms(clu):
     """ Plots quality control metrics for Kilosort results. Works with the spks.clusters.Clusters object """
     # Setup
@@ -167,3 +166,24 @@ def plot_cluster_info_histograms(clu):
     axs[2, 1].hist(clu.cluster_info.depth, bins=n_bins, alpha=0.5, color='c')
     axs[2, 1].set_xlabel('depth')
     axs[2, 1].set_ylabel('counts')
+
+def plot_scatter_panel(ax, x_data, y_data, xlabel, ylabel, x_err=None, y_err=None, highlight_idx=None):
+    """Plot a scatter comparison with standard formatting and optional error bars and highlights."""
+    # Regular scatter plot
+    ax.errorbar(x_data, y_data, 
+                xerr=x_err, yerr=y_err,
+                fmt='o', color='black', alpha=0.2,
+                ecolor='gray', elinewidth=1, capsize=2)
+    
+    # Add highlights if specified
+    if highlight_idx is not None:
+        ax.plot(x_data[highlight_idx], y_data[highlight_idx], 'o', 
+                mfc='none', mec='red', ms=15, mew=2)
+    
+    min_val = min(np.min(x_data), np.min(y_data))
+    max_val = max(np.max(x_data), np.max(y_data))
+    ax.plot([min_val, max_val], [min_val, max_val], "k--", alpha=0.5)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.tick_params(axis="both", which="major")
+    ax.set_aspect("equal")

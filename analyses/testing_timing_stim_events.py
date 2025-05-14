@@ -203,7 +203,7 @@ condition_order = [
     "running fast"
 ]
 
-fig2, ax2 = plt.subplots(1, 1, figsize=(5, 5))
+fig2, ax2 = plt.subplots(1, 1, figsize=(4, 6))
 sns.boxenplot(data=results_df, 
               x='condition', 
               y='activity', 
@@ -217,7 +217,7 @@ sns.boxenplot(data=results_df,
               trust_alpha=0.01,
               ax = ax2)
 ax2.set_ylabel(f'sp/s\n({int(results_df.shape[0]/4)} units)')
-ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha='right')
+ax2.tick_params(axis='x', labelrotation=45)
 # ax2.figtext(0.15, 0.90, f"slow pairs: {n_slow_pairs}, fast pairs: {n_fast_pairs}, offset: {wiggle*1000:.0f}ms", fontsize=10)
 fig2.tight_layout()
 

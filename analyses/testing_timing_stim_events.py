@@ -9,15 +9,19 @@ from os.path import join as pjoin
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 from spks.event_aligned import population_peth
-# from chiCa.chiCa import separate_axes
-from ephys.utils_analysis import calculate_stim_offsets, find_unique_cross_trial_offset_pairs
+from spks.utils import alpha_function
+from ephys.utils_analysis import (calculate_stim_offsets, 
+                                  find_unique_cross_trial_offset_pairs, 
+                                  compute_stim_response_for_trial_subset)
 from ephys.viz import plot_scatter_panel
 
-new_rc_params = {'text.usetex': False,
-"svg.fonttype": 'none'
-}
-mpl.rcParams.update(new_rc_params)
-plt.rcParams['font.sans-serif'] = ['Arial'] 
+# new_rc_params = {'text.usetex': False,
+# "svg.fonttype": 'none'
+# }
+# mpl.rcParams.update(new_rc_params)
+plt.rcParams['text.usetex'] = False
+plt.rcParams['svg.fonttype'] = 'none'
+plt.rcParams['font.sans-serif'] = 'Arial'
 plt.rcParams['font.size'] = 12
 plt.rcParams['figure.dpi'] = 100
 
@@ -35,37 +39,9 @@ trial_ts = trial_ts[
     trial_ts['center_port_entries'].apply(lambda x: len(x) > 0)
 ].copy()
 
-#%% Create trial IDs for response time quartiles
-rt = []
-idx = []
-for itrial, data in trial_ts.iterrows():
-    rt.append(data.response - data.center_port_exits[0])
-    idx.append(itrial)
-
-response_times = np.array(rt)
-trial_indices = np.array(idx)
-
-response_times_df = pd.DataFrame({
-    'trial_idx': trial_indices,
-    'response_times': np.array(response_times)
-})
-
-response_times_df = response_times_df.dropna() #remove early withdrawals and no choice trials if any remained lol
-bottom = 0.25
-top = 0.75
-quantile_25 = response_times_df.response_times.quantile([bottom]).values[0]
-quantile_75 = response_times_df.response_times.quantile([top]).values[0]
-
-response_times_df['quantile_25'] = response_times_df.response_times <= quantile_25
-response_times_df['quantile_75'] = response_times_df.response_times >= quantile_75
-
-trials_idx_25 = response_times_df[response_times_df.quantile_25 == True].trial_idx.values
-trials_idx_75 = response_times_df[response_times_df.quantile_75 == True].trial_idx.values
-
-slow_rt_trial_ts = trial_ts[trial_ts.index.isin(trials_idx_25)].copy()
-fast_rt_trial_ts = trial_ts[trial_ts.index.isin(trials_idx_75)].copy()
-
 #%% Main analysis
+
+#DEFINE VARIABLES TO BE USED EVERYWHERE
 pre_seconds = 0.025
 post_seconds = 0.15
 binwidth_ms = 25
@@ -86,8 +62,7 @@ offset_range_ms = np.round(matched_unique_pairs_df.offset_diff.max() - matched_u
 stat_alignment_times = matched_unique_pairs_df['stat_stim_time'].values
 move_alignment_times = matched_unique_pairs_df['move_stim_time'].values
 
-# Define alpha kernel to convolve PETHs with
-from spks.utils import alpha_function
+# Define alpha kernel to convolve PETHs with alpha function kernel
 t_decay = 0.025
 t_rise = 0.001
 decay = t_decay / (binwidth_ms/1000)
@@ -129,9 +104,9 @@ stat_sem_per_neuron = np.std(np.mean(pop_peth_stat_matched[:, :, stimulus_window
 move_sem_per_neuron = np.std(np.mean(pop_peth_move_matched[:, :, stimulus_window_bool], axis=2), axis=1) / np.sqrt(n_pairs)
 
 # --- Plotting ---
-fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+fig1, ax1 = plt.subplots(1, 1, figsize=(5, 5))
 
-plot_scatter_panel(ax, 
+plot_scatter_panel(ax1, 
                     stat_response_per_neuron, 
                     move_response_per_neuron,
                     "stationary stimulus activity (sp/s)", 
@@ -139,12 +114,111 @@ plot_scatter_panel(ax,
                     x_err=stat_sem_per_neuron, 
                     y_err=move_sem_per_neuron)
 
-ax.set_title(f'n = {n_pairs} pairs of stimuli\noffset_range_ms is {offset_range_ms} ms', fontsize=10)
+ax1.set_title(f'n = {n_pairs} pairs of stimuli\noffset_range_ms is {offset_range_ms} ms', fontsize=10)
 
-plt.tight_layout()
+fig1.tight_layout()
 save_dir = '/Users/gabriel/figures/'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
-plt.savefig(pjoin(save_dir, f"matched_stim_responses_{offset_range_ms}s_offset.svg"), format='svg', dpi=300, bbox_inches='tight')
+fig1.savefig(pjoin(save_dir, f"matched_stim_responses_{offset_range_ms}s_offset.svg"), format='svg', dpi=300, bbox_inches='tight')
+
+#%% Now to compare slow vs. fast response times
+rt = []
+idx = []
+for itrial, data in trial_ts.iterrows():
+    rt.append(data.response - data.center_port_exits[0])
+    idx.append(itrial)
+
+response_times = np.array(rt)
+trial_indices = np.array(idx)
+
+response_times_df = pd.DataFrame({
+    'trial_idx': trial_indices,
+    'response_times': np.array(response_times)
+})
+
+response_times_df = response_times_df.dropna() #remove early withdrawals and no choice trials if any remained lol
+bottom = 0.25
+top = 0.75
+quantile_25 = response_times_df.response_times.quantile([bottom]).values[0]
+quantile_75 = response_times_df.response_times.quantile([top]).values[0]
+
+response_times_df['quantile_25'] = response_times_df.response_times <= quantile_25
+response_times_df['quantile_75'] = response_times_df.response_times >= quantile_75
+
+trials_idx_25 = response_times_df[response_times_df.quantile_25 == True].trial_idx.values
+trials_idx_75 = response_times_df[response_times_df.quantile_75 == True].trial_idx.values
+
+slow_rt_trial_ts = trial_ts[trial_ts.index.isin(trials_idx_25)].copy()
+fast_rt_trial_ts = trial_ts[trial_ts.index.isin(trials_idx_75)].copy()
+
+slow_responses, n_slow_pairs = compute_stim_response_for_trial_subset(spike_times_per_unit=spike_times_per_unit,
+                                                                      trial_subset=slow_rt_trial_ts, 
+                                                                      pre_seconds=pre_seconds,
+                                                                      post_seconds=post_seconds,
+                                                                      binwidth_ms=binwidth_ms,
+                                                                      stim_window_start=stim_window_start,
+                                                                      stim_window_end=stim_window_end,
+                                                                      wiggle_room=wiggle)
+
+fast_responses, n_fast_pairs = compute_stim_response_for_trial_subset(spike_times_per_unit=spike_times_per_unit,
+                                                                      trial_subset=fast_rt_trial_ts, 
+                                                                      pre_seconds=pre_seconds,
+                                                                      post_seconds=post_seconds,
+                                                                      binwidth_ms=binwidth_ms,
+                                                                      stim_window_start=stim_window_start,
+                                                                      stim_window_end=stim_window_end,
+                                                                      wiggle_room=wiggle)
+
+n_neurons = slow_responses["Stationary"].shape[0]
+rows = []
+for neuron in np.arange(n_neurons):
+    rows.append({
+        "neuron_id": neuron,
+        "activity": slow_responses["Stationary"][neuron],
+        "condition": "stationary slow"
+    })
+    rows.append({
+        "neuron_id": neuron,
+        "activity": slow_responses["Movement"][neuron],
+        "condition": "running slow"
+    })
+    rows.append({
+        "neuron_id": neuron,
+        "activity": fast_responses["Stationary"][neuron],
+        "condition": "stationary fast"
+    })
+    rows.append({
+        "neuron_id": neuron,
+        "activity": fast_responses["Movement"][neuron],
+        "condition": "running fast"
+    })
+    
+results_df = pd.DataFrame(rows)
+
+condition_order = [
+    "stationary slow", 
+    "running slow",
+    "stationary fast", 
+    "running fast"
+]
+
+fig2, ax2 = plt.subplots(1, 1, figsize=(5, 5))
+sns.boxenplot(data=results_df, 
+              x='condition', 
+              y='activity', 
+              order=condition_order, 
+              hue='condition', 
+              palette="Paired", 
+              saturation=0.75, 
+              showfliers=False,
+              width_method="exponential", 
+              k_depth="trustworthy", 
+              trust_alpha=0.01,
+              ax = ax2)
+ax2.set_ylabel(f'sp/s\n({int(results_df.shape[0]/4)} units)')
+ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha='right')
+# ax2.figtext(0.15, 0.90, f"slow pairs: {n_slow_pairs}, fast pairs: {n_fast_pairs}, offset: {wiggle*1000:.0f}ms", fontsize=10)
+fig2.tight_layout()
 
 plt.show()

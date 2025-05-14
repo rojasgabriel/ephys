@@ -105,6 +105,62 @@ def find_unique_cross_trial_offset_pairs(stims_offset_df, wiggle_room=0.1):
     print(f"Found {len(matched_df)} unique cross-trial pairs with offset difference <= {wiggle_room}s.")
     return matched_df
 
+def compute_stim_response_for_trial_subset(spike_times_per_unit,
+                                           trial_subset, 
+                                           pre_seconds,
+                                           post_seconds,
+                                           binwidth_ms,
+                                           stim_window_start,
+                                           stim_window_end,
+                                           wiggle_room=0.010):
+    """
+    Given a trial subset (slow or fast RT), compute the mean population response
+    for stationary and movement conditions using matched unique pairs.
+    Returns a dict with keys 'Stationary' and 'Movement'.
+    """
+    #TODO: make this function general for comparing any two subsets of trials
+    from spks.event_aligned import population_peth
+
+    data = trial_subset.copy()
+    stims_offset_df = calculate_stim_offsets(data, trial_start_col='center_port_entries')
+    matched_pairs_df = find_unique_cross_trial_offset_pairs(stims_offset_df, wiggle_room=wiggle_room)
+    if matched_pairs_df.empty:
+        print("No matched pairs found!")
+        return None
+    
+    # Alignment times for stationary and movement stims
+    stat_alignment_times = matched_pairs_df['stat_stim_time'].values
+    move_alignment_times = matched_pairs_df['move_stim_time'].values
+    
+    pop_peth_stat, timebin_edges_stat, _ = population_peth(
+        all_spike_times=spike_times_per_unit,
+        alignment_times=stat_alignment_times,
+        pre_seconds=pre_seconds,
+        post_seconds=post_seconds,
+        binwidth_ms=binwidth_ms,
+        pad=0,
+        kernel=None,
+    )
+    pop_peth_move, _, _ = population_peth(
+        all_spike_times=spike_times_per_unit,
+        alignment_times=move_alignment_times,
+        pre_seconds=pre_seconds,
+        post_seconds=post_seconds,
+        binwidth_ms=binwidth_ms,
+        pad=0,
+        kernel=None,
+    )
+    
+    # Define response window based on timebins (use stationary timebins as reference)
+    stimulus_window_bool = (timebin_edges_stat[:-1] >= stim_window_start) & (timebin_edges_stat[:-1] <= stim_window_end)
+    
+    # Compute per-unit mean response averaged across matched pairs and within stimulus window
+    stat_response = np.mean(pop_peth_stat[:, :, stimulus_window_bool], axis=(1,2))
+    move_response = np.mean(pop_peth_move[:, :, stimulus_window_bool], axis=(1,2))
+    return {"Stationary": stat_response, "Movement": move_response}, len(matched_pairs_df)
+
+
+#%% General functions
 def get_nth_element(x, i):
     """ 
     Get the n-th event in an array.

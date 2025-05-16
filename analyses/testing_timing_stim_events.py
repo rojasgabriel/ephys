@@ -45,8 +45,8 @@ trial_ts = trial_ts[
 pre_seconds = 0.025
 post_seconds = 0.15
 binwidth_ms = 25
-stim_window_start = 0.04
-stim_window_end = 0.06
+stim_window_start = 0 #0.04
+stim_window_end = 0.15 #0.06
 wiggle = 0.01 #10ms
 
 data = trial_ts.copy()
@@ -95,13 +95,13 @@ stimulus_window_bool = (timebin_edges_stat[:-1] >= stim_window_start) & (timebin
 
 # Calculate mean response per neuron across the matched pairs
 # Shape of pop_peth is (n_neurons, n_trials/pairs, n_bins)
-stat_response_per_neuron = np.mean(pop_peth_stat_matched[:, :, stimulus_window_bool], axis=(1, 2))
-move_response_per_neuron = np.mean(pop_peth_move_matched[:, :, stimulus_window_bool], axis=(1, 2))
+stat_response_per_neuron = np.max(np.mean(pop_peth_stat_matched[:, :, stimulus_window_bool], axis=1), axis=1) #np.mean(pop_peth_stat_matched[:, :, stimulus_window_bool], axis=(1, 2))
+move_response_per_neuron = np.max(np.mean(pop_peth_move_matched[:, :, stimulus_window_bool], axis=1), axis=1) #np.mean(pop_peth_move_matched[:, :, stimulus_window_bool], axis=(1, 2))
 
 # Calculate SEM per neuron across the matched pairs
 n_pairs = pop_peth_stat_matched.shape[1]
-stat_sem_per_neuron = np.std(np.mean(pop_peth_stat_matched[:, :, stimulus_window_bool], axis=2), axis=1) / np.sqrt(n_pairs)
-move_sem_per_neuron = np.std(np.mean(pop_peth_move_matched[:, :, stimulus_window_bool], axis=2), axis=1) / np.sqrt(n_pairs)
+stat_sem_per_neuron = np.std(np.max(pop_peth_stat_matched[:, :, stimulus_window_bool], axis=2), axis=1) / np.sqrt(n_pairs) #np.std(stat_response_per_neuron, axis=1) / np.sqrt(n_pairs)
+move_sem_per_neuron = np.std(np.max(pop_peth_move_matched[:, :, stimulus_window_bool], axis=2), axis=1) / np.sqrt(n_pairs) #np.std(move_response_per_neuron, axis=1) / np.sqrt(n_pairs)
 
 # --- Plotting ---
 fig1, ax1 = plt.subplots(1, 1, figsize=(5, 5))
@@ -115,6 +115,8 @@ plot_scatter_panel(ax1,
                     y_err=move_sem_per_neuron)
 
 ax1.set_title(f'n = {n_pairs} pairs of stimuli\noffset_range_ms is {offset_range_ms} ms', fontsize=10)
+ax1.set_yscale('log')
+ax1.set_xscale('log')
 
 fig1.tight_layout()
 save_dir = '/Users/gabriel/figures/'
@@ -170,37 +172,37 @@ fast_responses, n_fast_pairs = compute_stim_response_for_trial_subset(spike_time
                                                                       stim_window_end=stim_window_end,
                                                                       wiggle_room=wiggle)
 
-n_neurons = slow_responses["Stationary"].shape[0]
+n_neurons = slow_responses["stationary"].shape[0]
 rows = []
 for neuron in np.arange(n_neurons):
     rows.append({
         "neuron_id": neuron,
-        "activity": slow_responses["Stationary"][neuron],
-        "condition": "stationary slow"
+        "activity": slow_responses["stationary"][neuron],
+        "condition": "stationary_slow"
     })
     rows.append({
         "neuron_id": neuron,
-        "activity": slow_responses["Movement"][neuron],
-        "condition": "running slow"
+        "activity": slow_responses["running"][neuron],
+        "condition": "running_slow"
     })
     rows.append({
         "neuron_id": neuron,
-        "activity": fast_responses["Stationary"][neuron],
-        "condition": "stationary fast"
+        "activity": fast_responses["stationary"][neuron],
+        "condition": "stationary_fast"
     })
     rows.append({
         "neuron_id": neuron,
-        "activity": fast_responses["Movement"][neuron],
-        "condition": "running fast"
+        "activity": fast_responses["running"][neuron],
+        "condition": "running_fast"
     })
     
 results_df = pd.DataFrame(rows)
 
 condition_order = [
-    "stationary slow", 
-    "running slow",
-    "stationary fast", 
-    "running fast"
+    "stationary_slow", 
+    "running_slow",
+    "stationary_fast", 
+    "running_fast"
 ]
 
 fig2, ax2 = plt.subplots(1, 1, figsize=(4, 6))
@@ -216,9 +218,23 @@ sns.boxenplot(data=results_df,
               k_depth="trustworthy", 
               trust_alpha=0.01,
               ax = ax2)
-ax2.set_ylabel(f'sp/s\n({int(results_df.shape[0]/4)} units)')
+# sns.histplot(
+#     data=results_df, 
+#     x='activity',
+#     hue='condition', 
+#     palette="Paired",
+#     fill=True,
+#     alpha=0.5,
+#     log_scale=False,
+#     linewidth=0,
+#     ax=ax2
+# )
+ax2.set_xlabel('sp/s')
 ax2.tick_params(axis='x', labelrotation=45)
 # ax2.figtext(0.15, 0.90, f"slow pairs: {n_slow_pairs}, fast pairs: {n_fast_pairs}, offset: {wiggle*1000:.0f}ms", fontsize=10)
 fig2.tight_layout()
 
 plt.show()
+
+
+# %%

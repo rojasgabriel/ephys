@@ -157,7 +157,7 @@ def compute_stim_response_for_trial_subset(spike_times_per_unit,
     # Compute per-unit mean response averaged across matched pairs and within stimulus window
     stat_response = np.mean(pop_peth_stat[:, :, stimulus_window_bool], axis=(1,2))
     move_response = np.mean(pop_peth_move[:, :, stimulus_window_bool], axis=(1,2))
-    return {"Stationary": stat_response, "Movement": move_response}, len(matched_pairs_df)
+    return {"stationary": stat_response, "running": move_response}, len(matched_pairs_df)
 
 
 #%% General functions

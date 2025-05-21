@@ -124,14 +124,15 @@ def compute_stim_response_for_trial_subset(spike_times_per_unit,
     data = trial_subset.copy()
     stims_offset_df = calculate_stim_offsets(data, trial_start_col='center_port_entries')
     matched_pairs_df = find_unique_cross_trial_offset_pairs(stims_offset_df, wiggle_room=wiggle_room)
+    n_matched_stims = len(matched_pairs_df)
     if matched_pairs_df.empty:
         print("No matched pairs found!")
         return None
-    
+
     # Alignment times for stationary and movement stims
     stat_alignment_times = matched_pairs_df['stat_stim_time'].values
     move_alignment_times = matched_pairs_df['move_stim_time'].values
-    
+
     pop_peth_stat, timebin_edges_stat, _ = population_peth(
         all_spike_times=spike_times_per_unit,
         alignment_times=stat_alignment_times,
@@ -153,11 +154,17 @@ def compute_stim_response_for_trial_subset(spike_times_per_unit,
     
     # Define response window based on timebins (use stationary timebins as reference)
     stimulus_window_bool = (timebin_edges_stat[:-1] >= stim_window_start) & (timebin_edges_stat[:-1] <= stim_window_end)
+
+    stationary_response = np.max(np.mean(pop_peth_stat[:, :, stimulus_window_bool], axis=1), axis=1) #mean across trials and then max of the stimulus window
+    running_response = np.max(np.mean(pop_peth_move[:, :, stimulus_window_bool], axis=1), axis=1)
     
-    # Compute per-unit mean response averaged across matched pairs and within stimulus window
-    stat_response = np.mean(pop_peth_stat[:, :, stimulus_window_bool], axis=(1,2))
-    move_response = np.mean(pop_peth_move[:, :, stimulus_window_bool], axis=(1,2))
-    return {"stationary": stat_response, "running": move_response}, len(matched_pairs_df)
+    n_neurons = pop_peth_stat.shape[1]
+    stationary_sem = np.std(np.max(pop_peth_stat[:, :, stimulus_window_bool], axis=2), axis=1) / np.sqrt(n_neurons)
+    running_sem = np.std(np.max(pop_peth_move[:, :, stimulus_window_bool], axis=2), axis=1) / np.sqrt(n_neurons)
+    return {"stationary": stationary_response, 
+            "stationary_sem" : stationary_sem,
+            "running": running_response,
+            "running_sem" : running_sem}, n_matched_stims
 
 
 #%% General functions
@@ -204,3 +211,19 @@ def moving_average(data, window_size):
         Moving average of the input data.
     """
     return np.convolve(data, np.ones(window_size), 'valid') / window_size
+
+def compute_mean_sem(psth : np.array):
+    """
+    Compute mean and standard error of the mean for a given PSTH.
+
+    Parameters:
+    -----------
+    psth : np.array
+        Population spike time histogram.
+
+    Returns:
+    --------
+    tuple
+        Mean and standard error of the mean of the PSTH.
+    """
+    return np.mean(psth, axis=0), np.std(psth, axis=0) / np.sqrt(psth.shape[0])

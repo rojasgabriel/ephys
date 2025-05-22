@@ -167,12 +167,12 @@ def plot_cluster_info_histograms(clu):
     axs[2, 1].set_xlabel('depth')
     axs[2, 1].set_ylabel('counts')
 
-def plot_scatter_panel(ax, x_data, y_data, xlabel, ylabel, x_err=None, y_err=None, highlight_idx=None):
+def plot_scatter_panel(ax, x_data, y_data, xlabel, ylabel, x_err=None, y_err=None, c='black', highlight_idx=None, plot_unity=False):
     """Plot a scatter comparison with standard formatting and optional error bars and highlights."""
     # Regular scatter plot
     ax.errorbar(x_data, y_data, 
                 xerr=x_err, yerr=y_err,
-                fmt='o', color='black', alpha=0.2,
+                fmt='o', color=c, alpha=0.2,
                 ecolor='gray', elinewidth=1, capsize=2)
     
     # Add highlights if specified
@@ -180,9 +180,11 @@ def plot_scatter_panel(ax, x_data, y_data, xlabel, ylabel, x_err=None, y_err=Non
         ax.plot(x_data[highlight_idx], y_data[highlight_idx], 'o', 
                 mfc='none', mec='red', ms=15, mew=2)
     
-    min_val = min(np.min(x_data), np.min(y_data))
-    max_val = max(np.max(x_data), np.max(y_data))
-    ax.plot([min_val, max_val], [min_val, max_val], "k--", alpha=0.5)
+    if plot_unity:
+        min_val = min(np.min(x_data), np.min(y_data))
+        max_val = max(np.max(x_data), np.max(y_data))
+        ax.plot([min_val, max_val], [min_val, max_val], "k--", alpha=0.5)
+        
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.tick_params(axis="both", which="major")

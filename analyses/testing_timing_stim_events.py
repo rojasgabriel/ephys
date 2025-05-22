@@ -7,7 +7,6 @@ import os
 from os.path import join as pjoin
 
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 from spks.event_aligned import population_peth
 from spks.utils import alpha_function
 from ephys.utils_analysis import (calculate_stim_offsets, 
@@ -15,10 +14,6 @@ from ephys.utils_analysis import (calculate_stim_offsets,
                                   compute_stim_response_for_trial_subset)
 from ephys.viz import plot_scatter_panel
 
-# new_rc_params = {'text.usetex': False,
-# "svg.fonttype": 'none'
-# }
-# mpl.rcParams.update(new_rc_params)
 plt.rcParams['text.usetex'] = False
 plt.rcParams['svg.fonttype'] = 'none'
 plt.rcParams['font.sans-serif'] = 'Arial'
@@ -111,49 +106,16 @@ plot_scatter_panel(ax1,
                     "stationary stimulus activity (sp/s)", 
                     "running stimulus activity (sp/s)",
                     x_err=stat_sem_per_neuron, 
-                    y_err=move_sem_per_neuron)
+                    y_err=move_sem_per_neuron,
+                    plot_unity=True)
 
 ax1.set_title(f'n = {n_pairs} pairs of stimuli\noffset_range_ms is {offset_range_ms} ms', fontsize=10)
-# ax1.set_yscale('log')
-# ax1.set_xscale('log')
 
 fig1.tight_layout()
 save_dir = '/Users/gabriel/figures/'
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 fig1.savefig(pjoin(save_dir, f"stim_responses_{offset_range_ms}s_offset.svg"), format='svg', dpi=300, bbox_inches='tight')
-
-#%% Avg firing rate quartiles
-mod_idx = (move_response_per_neuron - stat_response_per_neuron) / \
-          (move_response_per_neuron + stat_response_per_neuron)
-
-# estimate each unit’s overall firing rate (spikes/sec)
-# here we take the full span of recorded spike times
-starts = [st.min() if len(st)>0 else 0 for st in spike_times_per_unit]
-stops  = [st.max() if len(st)>0 else 0 for st in spike_times_per_unit]
-t_start = min(starts)
-t_stop  = max(stops)
-dur = t_stop - t_start
-fr_units = np.array([len(st) / dur for st in spike_times_per_unit])
-
-# assign quartiles
-quartiles = pd.qcut(fr_units, 3, labels=['low','medium','high'])
-
-# build a DataFrame
-df_q = pd.DataFrame({
-    'firing_rate': fr_units,
-    'mod_idx':       mod_idx,
-    'quartile':      quartiles
-})
-
-# plot modulation index by firing‐rate quartile
-fig5, ax5 = plt.subplots(1, figsize=(5, 4))
-sns.boxplot(x='quartile', y='mod_idx', data=df_q, hue='quartile', palette='pastel', ax=ax5, legend=False)
-sns.stripplot(x='quartile', y='mod_idx', data=df_q,
-              color='gray', size=4, jitter=True, ax=ax5)
-ax5.set_xlabel('avg. session firing rate')
-ax5.set_ylabel('movement index')
-fig5.tight_layout()
 
 #%% Now to compare slow vs. fast response times
 rt = []
@@ -251,11 +213,50 @@ if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 fig2.savefig(pjoin(save_dir, f"stim_responses_fast_vs_slow_{offset_range_ms}s_offset.svg"), format='svg', dpi=300, bbox_inches='tight')
 
+#%% Avg firing rate quartiles
+mod_idx = (move_response_per_neuron - stat_response_per_neuron) / \
+          (move_response_per_neuron + stat_response_per_neuron)
+
+# estimate each unit’s overall firing rate (spikes/sec)
+# here we take the full span of recorded spike times
+starts = [st.min() if len(st)>0 else 0 for st in spike_times_per_unit]
+stops  = [st.max() if len(st)>0 else 0 for st in spike_times_per_unit]
+t_start = min(starts)
+t_stop  = max(stops)
+dur = t_stop - t_start
+fr_units = np.array([len(st) / dur for st in spike_times_per_unit])
+
+# assign quartiles
+quartiles = pd.qcut(fr_units, 3, labels=['low','medium','high'])
+
+# build a DataFrame
+df_q = pd.DataFrame({
+    'firing_rate': fr_units,
+    'mod_idx':       mod_idx,
+    'quartile':      quartiles
+})
+
+# plot modulation index by firing‐rate quartile
+fig3, ax3 = plt.subplots(1, figsize=(5, 4))
+sns.boxplot(x='quartile', y='mod_idx', data=df_q, hue='quartile', palette='hls', ax=ax3, legend=False, fill=False, showfliers=False)
+sns.stripplot(x='quartile', y='mod_idx', data=df_q,
+              hue='quartile', palette='hls', size=4, jitter=True, ax=ax3)
+ax3.set_xlabel('avg. session firing rate')
+ax3.set_ylabel('movement index\n(fast-slow)/(fast+slow)')
+fig3.tight_layout()
+
 #%% Modulation index
 slow_idx = (slow_responses['running'] - slow_responses['stationary'])/(slow_responses['running'] + slow_responses['stationary'])
 fast_idx = (fast_responses['running'] - fast_responses['stationary'])/(fast_responses['running'] + fast_responses['stationary'])
 
-n = len(slow_idx)
+#TODO: this df and df_q are redundant. i should construct just one of them with all the data at the beginning before doing all the plotting
+df_comp = pd.DataFrame({
+    'quartile': quartiles,
+    'slow_idx': slow_idx,
+    'fast_idx': fast_idx
+})
+
+n = len(df_comp['slow_idx'])
 x_slow = np.zeros(n)
 x_fast = np.ones(n)
 
@@ -264,110 +265,69 @@ jitter = 0.1
 x_slow_j = x_slow + np.random.uniform(-jitter, jitter, size=n)
 x_fast_j = x_fast + np.random.uniform(-jitter, jitter, size=n)
 
-fig3, ax3 = plt.subplots(1, figsize=(3, 6))
+df_comp.insert(loc=0, column='x_slow_j', value=x_slow_j, allow_duplicates=False)
+df_comp.insert(loc=0, column='x_fast_j', value=x_fast_j, allow_duplicates=False)
 
-# draw lines connecting each unit’s slow->fast
-for i in range(n):
-    ax3.plot(
+fig4, ax4 = plt.subplots(1, figsize=(4,6))
+
+quartile_categories = df_comp['quartile'].cat.categories.tolist()
+palette_hls = sns.color_palette("hls", len(quartile_categories))[::-1]
+quartile_color_map = {category: color for category, color in zip(quartile_categories, palette_hls)}
+
+# Draw lines connecting each unit’s slow->fast, colored by quartile
+for i in range(n):  # n is the number of units
+    quartile_value = df_comp['quartile'].iloc[i]
+    line_color = quartile_color_map[quartile_value]
+    ax4.plot(
         [x_slow_j[i], x_fast_j[i]],
-        [slow_idx[i],  fast_idx[i]],
-        color='gray', alpha=0.5, linewidth=0.7
+        [df_comp['slow_idx'].iloc[i], df_comp['fast_idx'].iloc[i]],
+        color=line_color,
+        alpha=0.5,
+        linewidth=0.7,
+        zorder=1 # Draw lines behind scatter points
     )
 
-ax3.scatter(x_slow_j, slow_idx, color='blue', label='slow', s=30, alpha=0.5)
-ax3.scatter(x_fast_j, fast_idx, color='red',  label='fast',  s=30, alpha = 0.5)
+sns.scatterplot(
+    data=df_comp, x=x_slow_j, y='slow_idx', hue='quartile',
+    hue_order=quartile_categories, palette=palette_hls,
+    ax=ax4, legend=False, s=50, alpha=0.8, zorder=2
+)
+sns.scatterplot(
+    data=df_comp, x=x_fast_j, y='fast_idx', hue='quartile',
+    hue_order=quartile_categories, palette=palette_hls,
+    ax=ax4, legend=True, s=50, alpha=0.8, zorder=2 # Generate legend from this plot
+)
 
-ax3.set_xticks([0, 1])
-ax3.set_xticklabels(['slow', 'fast'])
-ax3.set_ylabel('movement index')
-ax3.legend(frameon=False, loc='upper right')
-fig3.tight_layout()
-save_dir = '/Users/gabriel/figures/'
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
-fig3.savefig(pjoin(save_dir, f"fast_vs_slow_by_unit.svg"), format='svg', dpi=300, bbox_inches='tight')
+ax4.set_xticks([0, 1])
+ax4.set_xticklabels(['slow', 'fast'])
+ax4.set_ylabel('movement index\n(fast-slow)/(fast+slow)')
+ax4.set_xlabel('time to choice')
 
-# now plot the distribution of the slopes of those lines
-slopes = fast_idx - slow_idx
-
-fig4, ax4 = plt.subplots(figsize=(4, 3))
-sns.histplot(slopes, bins=20, kde=True, color='gray', ax=ax4)
-ax4.set_xlabel('slope (fast – slow)')
-ax4.set_ylabel('count')
+handles, labels = ax4.get_legend_handles_labels()
+ax4.legend(bbox_to_anchor=(1.05, 1), loc='best', frameon=False)
 fig4.tight_layout()
-save_dir = '/Users/gabriel/figures/'
-if not os.path.exists(save_dir):
-    os.makedirs(save_dir)
-fig4.savefig(pjoin(save_dir, f"fast_vs_slow_unit_slopes.svg"), format='svg', dpi=300, bbox_inches='tight')
 
-#%% Movement index fast vs. slow by quartiles
-df_comp = pd.DataFrame({
-    'quartile': quartiles,
-    'slow_idx': slow_idx,
-    'fast_idx': fast_idx
-})
-df_melt = df_comp.reset_index().melt(
-    id_vars=['index','quartile'],
-    value_vars=['slow_idx','fast_idx'],
-    var_name='condition',
-    value_name='movement_index'
-)
-df_melt['condition'] = df_melt['condition'].map({
-    'slow_idx':'slow',
-    'fast_idx':'fast'
-})
 
-fig6, ax6 = plt.subplots(1, figsize=(6, 4))
-sns.boxplot(
-    x='quartile',
-    y='movement_index',
-    hue='condition',
-    data=df_melt,
-    palette={'slow':'blue','fast':'red'},
-    ax=ax6,
-    fill=False,
-    linewidth=0.8
-)
-sns.stripplot(
-    x='quartile',
-    y='movement_index',
-    hue='condition',
-    palette={'slow':'blue','fast':'red'},
-    data=df_melt,
-    dodge=True,
-    size=4,
-    jitter=0.15,
-    ax=ax6,
-    legend=False,
-    alpha=0.5
-)
-ax6.set_xlabel('firing rate')
-ax6.set_ylabel('movement index')
-ax6.legend(loc='lower right', frameon=False)
-fig6.tight_layout()
+slope = df_comp['fast_idx'] - df_comp['slow_idx']
+df_comp.insert(0, 'slope', slope)
 
-#%% Variance of movement index by quartile and fast vs. slow
-var_df = df_melt.groupby(['quartile', 'condition'], observed=True)['movement_index'] \
-                .agg(var='var', mean='mean', n='count') \
-                .reset_index()
+fig5, ax5 = plt.subplots(1, figsize=(6,4))
+sns.histplot(data=df_comp, 
+             x='slope',
+             hue='quartile',
+             hue_order=quartile_categories,
+             palette=palette_hls[::-1],
+             ax=ax5,
+             bins=20,
+             kde=True,
+             alpha=0.5,
+             linewidth=0.5,
+             line_kws={'linewidth':2},
+             legend=False)
 
-fig7, ax7 = plt.subplots(1, figsize=(5, 4))
-sns.barplot(
-    data=var_df,
-    x='quartile',
-    y='var',  # 'var' is the column with variance values in var_df
-    hue='condition',
-    hue_order=['slow', 'fast'],
-    palette={'slow': 'blue', 'fast': 'red'},
-    fill=True,
-    linewidth=1.5,
-    ax=ax7
-)
-ax7.set_xlabel('firing rate')
-ax7.set_ylabel('movement index variance')
+ax5.set_xlabel('slope\n(fast-slow)')
+ax5.legend(labels=quartile_categories, loc='best', frameon=False)
+fig5.tight_layout()
 
-ax7.legend(loc='upper right', frameon=False)
-
-fig7.tight_layout()
 
 plt.show()

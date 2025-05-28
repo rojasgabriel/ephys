@@ -242,7 +242,7 @@ sns.boxplot(x='quartile', y='mod_idx', data=df_q, hue='quartile', palette='hls',
 sns.stripplot(x='quartile', y='mod_idx', data=df_q,
               hue='quartile', palette='hls', size=4, jitter=True, ax=ax3)
 ax3.set_xlabel('avg. session firing rate')
-ax3.set_ylabel('movement index\n(fast-slow)/(fast+slow)')
+ax3.set_ylabel('movement index\n(move-stat)/(move+stat)')
 fig3.tight_layout()
 
 #%% Modulation index
@@ -300,7 +300,7 @@ sns.scatterplot(
 
 ax4.set_xticks([0, 1])
 ax4.set_xticklabels(['slow', 'fast'])
-ax4.set_ylabel('movement index\n(fast-slow)/(fast+slow)')
+ax4.set_ylabel('movement index\n(move-stat)/(move+stat)')
 ax4.set_xlabel('time to choice')
 
 handles, labels = ax4.get_legend_handles_labels()

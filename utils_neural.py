@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def get_cluster_spike_times(spike_times, spike_clusters, good_unit_ids):
     """
     Get the spike times for each cluster individually.
@@ -12,17 +13,32 @@ def get_cluster_spike_times(spike_times, spike_clusters, good_unit_ids):
     Returns:
         np.array: spike times for each cluster of n_units x n_spikes
     """
-    return [spike_times[good_unit_ids][spike_clusters[good_unit_ids] == uclu] for uclu in np.unique(spike_clusters[good_unit_ids])]
+    return [
+        spike_times[good_unit_ids][spike_clusters[good_unit_ids] == uclu]
+        for uclu in np.unique(spike_clusters[good_unit_ids])
+    ]
+
 
 def get_good_units(clusters_obj, spike_clusters):
-    mask = ((np.abs(clusters_obj.cluster_info.trough_amplitude - clusters_obj.cluster_info.peak_amplitude) > 50)
-            & (clusters_obj.cluster_info.amplitude_cutoff < 0.1) 
-            & (clusters_obj.cluster_info.isi_contamination < 0.1)
-            & (clusters_obj.cluster_info.presence_ratio >= 0.6)
-            & (clusters_obj.cluster_info.spike_duration > 0.1)
-            & (clusters_obj.cluster_info.firing_rate > 2)) #added this filter myself. changed from 1 to 2 sp/s on 4/16/25
+    mask = (
+        (
+            np.abs(
+                clusters_obj.cluster_info.trough_amplitude
+                - clusters_obj.cluster_info.peak_amplitude
+            )
+            > 50
+        )
+        & (clusters_obj.cluster_info.amplitude_cutoff < 0.1)
+        & (clusters_obj.cluster_info.isi_contamination < 0.1)
+        & (clusters_obj.cluster_info.presence_ratio >= 0.6)
+        & (clusters_obj.cluster_info.spike_duration > 0.1)
+        & (clusters_obj.cluster_info.firing_rate > 2)
+    )  # added this filter myself. changed from 1 to 2 sp/s on 4/16/25
+    # TODO:add n_active_channels < 100 filter to eliminate multi channel noise
 
-    good_unit_ids = np.isin(spike_clusters,clusters_obj.cluster_info[mask].cluster_id.values)
+    good_unit_ids = np.isin(
+        spike_clusters, clusters_obj.cluster_info[mask].cluster_id.values
+    )
     n_units = len(clusters_obj.cluster_info[mask])
 
     return good_unit_ids, n_units

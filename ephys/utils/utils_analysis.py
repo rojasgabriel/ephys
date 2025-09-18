@@ -142,7 +142,7 @@ def compute_stim_response_for_trial_subset(
     Returns a dict with keys 'Stationary' and 'Movement'.
     """
     # TODO: make this function general for comparing any two subsets of trials
-    from spks.event_aligned import population_peth
+    from spks.event_aligned import population_peth  # type: ignore
 
     data = trial_subset.copy()
     stims_offset_df = calculate_stim_offsets(
@@ -253,13 +253,13 @@ def moving_average(data, window_size):
     return np.convolve(data, np.ones(window_size), "valid") / window_size
 
 
-def compute_mean_sem(psth: np.array):
+def compute_mean_sem(psth: np.ndarray):
     """
     Compute mean and standard error of the mean for a given PSTH.
 
     Parameters:
     -----------
-    psth : np.array
+    psth : np.ndarray
         Population spike time histogram.
 
     Returns:

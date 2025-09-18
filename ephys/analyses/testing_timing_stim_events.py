@@ -8,14 +8,14 @@ from os.path import join as pjoin
 
 
 import matplotlib.pyplot as plt
-from spks.event_aligned import population_peth
-from spks.utils import alpha_function
-from ephys.utils_analysis import (
+from spks.event_aligned import population_peth  # type: ignore
+from spks.utils import alpha_function  # type: ignore
+from ephys.utils.utils_analysis import (
     calculate_stim_offsets,
     find_unique_cross_trial_offset_pairs,
     compute_stim_response_for_trial_subset,
-)
-from ephys.viz import plot_scatter_panel
+)  # type: ignore
+from ephys.viz import plot_scatter_panel  # type: ignore
 
 plt.rcParams["text.usetex"] = False
 plt.rcParams["svg.fonttype"] = "none"

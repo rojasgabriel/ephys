@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
-import spks
-import chiCa.chiCa as chiCa
+import spks  # type: ignore
+import chiCa.chiCa as chiCa  # type: ignore
 from os.path import join as pjoin
 from glob import glob
 

@@ -7,8 +7,8 @@ from os.path import join as pjoin
 
 
 import matplotlib.pyplot as plt
-from spks.event_aligned import population_peth
-from spks.utils import alpha_function
+from spks.event_aligned import population_peth  # type: ignore
+from spks.utils import alpha_function  # type: ignore
 
 plt.rcParams["text.usetex"] = False
 plt.rcParams["svg.fonttype"] = "none"
@@ -100,8 +100,8 @@ peak_df = pd.DataFrame(peak_matrix, columns=colnames)
 
 # Plot each unit’s peak responses across the five stimuli
 peak_subtracted_df = peak_df.subtract(peak_df["peak_first_flash"], axis=0)
-stimuli = peak_subtracted_df.columns  # get labels for stimuli as index
-x = np.arange(len(stimuli))
+stim_labels = peak_subtracted_df.columns  # get labels for stimuli as index
+x = np.arange(len(stim_labels))
 
 fig1, ax1 = plt.subplots(1, figsize=(5, 5))
 
@@ -125,10 +125,10 @@ ax1.errorbar(
 )
 
 ax1.set_xticks(x)
-ax1.set_xticklabels(stimuli, rotation=45, ha="right")
+ax1.set_xticklabels(stim_labels, rotation=45, ha="right")
 ax1.set_ylabel("peak response relative to 1st flash (sp/s)")
 ax1.legend()
-ax1.set_ylim([-10, 10])
+ax1.set_ylim((-10, 10))
 fig1.tight_layout()
 
 melt_peak = peak_subtracted_df.melt(
@@ -146,11 +146,11 @@ sns.boxplot(
 )
 
 # before setting labels, fix the tick positions
-ax2.set_xticks(range(len(stimuli)))
-ax2.set_xticklabels(stimuli, rotation=45, ha="right")
+ax2.set_xticks(range(len(stim_labels)))
+ax2.set_xticklabels(stim_labels, rotation=45, ha="right")
 
 ax2.set_ylabel("peak response relative to 1st flash (sp/s)")
-ax2.set_ylim([-25, 25])
+ax2.set_ylim((-25, 25))
 fig2.tight_layout()
 
 # %% Let's plot adaptation now but divided by response side
@@ -247,8 +247,8 @@ right_peak_subtracted_df = right_peak_df.subtract(
 )
 
 # Plot comparison
-stimuli = left_peak_subtracted_df.columns
-x = np.arange(len(stimuli))
+stim_labels_side = left_peak_subtracted_df.columns
+x = np.arange(len(stim_labels_side))
 
 fig3, ax3 = plt.subplots(1, figsize=(5, 5))
 
@@ -288,9 +288,9 @@ ax3.errorbar(
 )
 
 ax3.set_xticks(x)
-ax3.set_xticklabels(stimuli, rotation=45, ha="right")
+ax3.set_xticklabels(stim_labels_side, rotation=45, ha="right")
 ax3.set_ylabel("Peak response relative to 1st flash (sp/s)")
-ax3.set_ylim([-10, 10])
+ax3.set_ylim((-10, 10))
 ax3.legend()
 fig3.tight_layout()
 
@@ -317,11 +317,11 @@ sns.boxplot(
 )
 
 # similarly for ax4
-ax4.set_xticks(range(len(stimuli)))
-ax4.set_xticklabels(stimuli, rotation=45, ha="right")
+ax4.set_xticks(range(len(stim_labels_side)))
+ax4.set_xticklabels(stim_labels_side, rotation=45, ha="right")
 
 ax4.set_ylabel("Peak response relative to 1st flash (sp/s)")
-ax4.set_ylim([-25, 25])
+ax4.set_ylim((-25, 25))
 ax4.legend(title="Response Side")
 fig4.tight_layout()
 

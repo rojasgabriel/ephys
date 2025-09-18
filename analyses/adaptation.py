@@ -15,7 +15,6 @@ plt.rcParams["svg.fonttype"] = "none"
 plt.rcParams["font.sans-serif"] = "Arial"
 plt.rcParams["font.size"] = 12
 plt.rcParams["figure.dpi"] = 100
-plt.rcParams["backend"] = "macosx"
 
 
 # %% Load data
@@ -336,4 +335,4 @@ fig4.savefig(
     os.path.join(figures_dir, "adaptation_by_side_boxplot.svg"), format="svg", dpi=300
 )
 
-# plt.show()
+plt.show()

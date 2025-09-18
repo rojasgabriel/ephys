@@ -8,8 +8,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from os.path import join as pjoin
-from spks.event_aligned import population_peth
-from chiCa.chiCa.visualization_utils import separate_axes
+from spks.event_aligned import population_peth  # type: ignore
+from chiCa.chiCa.visualization_utils import separate_axes  # type: ignore
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 

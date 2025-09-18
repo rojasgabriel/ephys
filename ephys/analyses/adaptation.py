@@ -4,8 +4,6 @@ import numpy as np
 import seaborn as sns
 import os
 from os.path import join as pjoin
-
-
 import matplotlib.pyplot as plt
 from spks.event_aligned import population_peth  # type: ignore
 from spks.utils import alpha_function  # type: ignore

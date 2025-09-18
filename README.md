@@ -1,3 +1,10 @@
-### ephys - code for analyzing my ephys data in the Churchland Lab
+# ephys
 
-This repo contains all of my work-in-progress code for analyzing the impact of movements on V1 activity during freely-moving decision making.
+Analyses for studying the impact of movements on V1 activity during freely-moving decision making.
+
+## Requirements:
+- `numpy`
+- `pandas`
+- `matplotlib`
+- `spks`
+- `chiCa`

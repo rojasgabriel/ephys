@@ -68,9 +68,9 @@ if not mice:
     sys.exit()
 
 print("Processing data for each mouse and session...")
-auto_mode = input(f"Do you want to run in auto mode? (y/n): ").strip().lower() == "y"
+auto_mode = input("Do you want to run in auto mode? (y/n): ").strip().lower() == "y"
 save_locally = (
-    input(f"Do you want to save the processed data in the home data folder? (y/n): ")
+    input("Do you want to save the processed data in the home data folder? (y/n): ")
     .strip()
     .lower()
     == "y"

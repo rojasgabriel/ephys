@@ -31,6 +31,8 @@ spike_times_per_unit = np.load(
     allow_pickle=True,
 )
 
+# NOTE: temporarily doing just one neuron
+spike_times_per_unit = np.array([spike_times_per_unit[73]])
 # %% Pre-process variables
 trial_ts = trial_ts[
     trial_ts["stationary_stims"].apply(lambda x: len(x) > 0)
@@ -126,7 +128,7 @@ ax1.set_xticks(x)
 ax1.set_xticklabels(stim_labels, rotation=45, ha="right")
 ax1.set_ylabel("peak response relative to 1st flash (sp/s)")
 ax1.legend()
-ax1.set_ylim((-10, 10))
+# ax1.set_ylim((-10, 10))
 fig1.tight_layout()
 
 melt_peak = peak_subtracted_df.melt(
@@ -148,7 +150,7 @@ ax2.set_xticks(range(len(stim_labels)))
 ax2.set_xticklabels(stim_labels, rotation=45, ha="right")
 
 ax2.set_ylabel("peak response relative to 1st flash (sp/s)")
-ax2.set_ylim((-25, 25))
+# ax2.set_ylim((-25, 25))
 fig2.tight_layout()
 
 # %% Let's plot adaptation now but divided by response side
@@ -288,7 +290,7 @@ ax3.errorbar(
 ax3.set_xticks(x)
 ax3.set_xticklabels(stim_labels_side, rotation=45, ha="right")
 ax3.set_ylabel("Peak response relative to 1st flash (sp/s)")
-ax3.set_ylim((-10, 10))
+# ax3.set_ylim((-10, 10))
 ax3.legend()
 fig3.tight_layout()
 
@@ -319,18 +321,20 @@ ax4.set_xticks(range(len(stim_labels_side)))
 ax4.set_xticklabels(stim_labels_side, rotation=45, ha="right")
 
 ax4.set_ylabel("Peak response relative to 1st flash (sp/s)")
-ax4.set_ylim((-25, 25))
+# ax4.set_ylim((-25, 25))
 ax4.legend(title="Response Side")
 fig4.tight_layout()
 
 
-fig1.savefig(os.path.join(figures_dir, "adaptation_mean.svg"), format="svg", dpi=300)
-fig2.savefig(os.path.join(figures_dir, "adaptation_boxplot.svg"), format="svg", dpi=300)
-fig3.savefig(
-    os.path.join(figures_dir, "adaptation_by_side_mean.svg"), format="svg", dpi=300
-)
-fig4.savefig(
-    os.path.join(figures_dir, "adaptation_by_side_boxplot.svg"), format="svg", dpi=300
-)
+# fig1.savefig(os.path.join(figures_dir, "adaptation_mean.svg"), format="svg", dpi=300)
+# fig2.savefig(os.path.join(figures_dir, "adaptation_boxplot.svg"), format="svg", dpi=300)
+# fig3.savefig(
+#     os.path.join(figures_dir, "adaptation_by_side_mean.svg"), format="svg", dpi=300
+# )
+# fig4.savefig(
+#     os.path.join(figures_dir, "adaptation_by_side_boxplot.svg"), format="svg", dpi=300
+# )
 
 plt.show()
+
+# %%

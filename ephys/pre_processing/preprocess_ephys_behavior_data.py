@@ -6,9 +6,9 @@ import re
 import sys
 from os.path import join as pjoin
 from glob import glob
-import spks
-from ephys.utils_IO import load_sync_data, process_port_events, process_trial_data
-from ephys.utils_neural import get_good_units, get_cluster_spike_times
+import spks  # type: ignore
+from ephys.utils_IO import load_sync_data, process_port_events, process_trial_data  # type: ignore
+from ephys.utils_neural import get_good_units, get_cluster_spike_times  # type: ignore
 from tqdm import tqdm
 
 data_path = "/Volumes/grb_ephys/data"
@@ -41,23 +41,33 @@ if specific_mouse:
             "Enter the session ID (e.g., 20230101_123456): "
         ).strip()
 else:
-    specific_session = None
+    specific_session = False
 
 print("Finding mice directories...")
 mice = []
-sessions = {}
+sessions: dict[str, list[str]] = {}
 
 for path in mice_paths:
-    mouse_id = re.search(r"GRB\d+", os.path.basename(path)).group(0)
+    m = re.search(r"GRB\d+", os.path.basename(path))
+    if m is None:
+        print(f"Warning: could not extract mouse ID from path: {path}; skipping.")
+        continue
+    mouse_id = m.group(0)
     if specific_mouse and mouse_id != selected_mouse:
         continue
     mice.append(mouse_id)
-    print(f"Found mouse: {mouse_id}")
-    session_paths = glob(f"{path}/*")
-    sessions[mouse_id] = []
-
-    for session_path in session_paths:
-        session_id = re.search(r"\d{8}_\d{6}", os.path.basename(session_path)).group(0)
+    for session_path in sessions:
+        m2 = re.search(r"\d{8}_\d{6}", os.path.basename(session_path))
+        if m2 is None:
+            print(
+                f"Warning: could not extract session ID from path: {session_path}; skipping."
+            )
+            continue
+        session_id = m2.group(0)
+        if specific_session and session_id != selected_session:
+            continue
+        sessions[mouse_id].append(session_id)
+        print(f"Found session: {session_id}")
         if specific_session and session_id != selected_session:
             continue
         sessions[mouse_id].append(session_id)

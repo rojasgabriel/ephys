@@ -29,10 +29,18 @@ def load_sync_data(sessionpath, sync_port=0):
     )(np.arange(len(nisync)))
     srate = apsyncdata[0]["sampling_rate"]
     t = nitime / srate
-    analog_signal = nisync[:, 0]
+    visual_analog = nisync[:, 0]
+    audio_analog = nisync[:, 1]
     print("Success!\n-----")
 
-    return corrected_onsets, corrected_offsets, t, srate, analog_signal
+    analog_signals = {
+        "visual": visual_analog,
+        "audio": audio_analog,
+        "raw": nisync,
+        "metadata": nimeta,
+    }
+
+    return corrected_onsets, corrected_offsets, t, srate, analog_signals
 
 
 def process_port_events(corrected_onsets, corrected_offsets, srate):
@@ -63,23 +71,36 @@ def process_port_events(corrected_onsets, corrected_offsets, srate):
 
 
 def process_trial_data(
-    sessionpath, trial_starts, t, srate, analog_signal, port_events, animal, session
+    sessionpath, trial_starts, t, srate, analog_signals, port_events, animal, session
 ):
     behavior_data = chiCa.load_trialdata(
         glob(pjoin(sessionpath, f"chipmunk/{animal}_{session}_chipmunk_*.mat"))[0]
     )  # TODO: test now with glob instead of hardcoding the DemonAudiTask name
 
+    stim_ts_per_channel: dict[str, np.ndarray] = {}
+    for channel_name, signal in analog_signals.items():
+        if not isinstance(signal, np.ndarray):
+            continue
+        if signal.ndim != 1:
+            continue
+        stim_ts_per_channel[channel_name] = detect_stim_events(
+            t, srate, signal, amp_threshold=5000
+        )
+
+    if not stim_ts_per_channel:
+        raise ValueError("No 1-D analog signals provided for stimulus detection.")
+
     if port_events is None:
         raise Warning("No port events found. Proceeding without them...")
         trial_ts = get_trial_ts(
             trial_starts,
-            detect_stim_events(t, srate, analog_signal, amp_threshold=5000),
+            stim_ts_per_channel,
             behavior_data,
         )
     else:
         trial_ts = get_trial_ts(
             trial_starts,
-            detect_stim_events(t, srate, analog_signal, amp_threshold=5000),
+            stim_ts_per_channel,
             behavior_data,
             port_events,
         )
@@ -136,31 +157,64 @@ def process_trial_data(
     )
 
     print("Success!")
-    return behavior_data, trial_ts
+    return behavior_data, trial_ts, stim_ts_per_channel
 
 
-def get_trial_ts(trial_starts, stim_ts, behavior_data, port_events=None):
+def get_trial_ts(trial_starts, stim_ts_per_channel, behavior_data, port_events=None):
     trial_data = []
 
-    # Vectorized operations for stim events
-    stim_events = np.searchsorted(stim_ts, trial_starts)
+    channel_names = list(stim_ts_per_channel.keys())
+    channel_events = {
+        name: np.searchsorted(stim_ts_per_channel[name], trial_starts)
+        for name in channel_names
+    }
+
+    if channel_names:
+        combined_stim_ts = np.sort(
+            np.unique(
+                np.concatenate(
+                    [
+                        stim_ts_per_channel[name]
+                        for name in channel_names
+                        if stim_ts_per_channel[name].size > 0
+                    ]
+                )
+            )
+        )
+    else:
+        combined_stim_ts = np.array([])
+
+    combined_events = (
+        np.searchsorted(combined_stim_ts, trial_starts)
+        if combined_stim_ts.size > 0
+        else np.zeros_like(trial_starts, dtype=int)
+    )
 
     for ti in range(len(trial_starts) - 1):
         start_time, end_time = trial_starts[ti], trial_starts[ti + 1]
+        stim_dict = {}
 
-        stim_start, stim_end = stim_events[ti], stim_events[ti + 1]
-        stim_events_in_interval = stim_ts[stim_start:stim_end]
+        for name in channel_names:
+            channel_start = channel_events[name][ti]
+            channel_end = channel_events[name][ti + 1]
+            channel_ts = stim_ts_per_channel[name][channel_start:channel_end]
+            stim_dict[f"stim_ts_{name}"] = channel_ts
+
+        combined_start = combined_events[ti]
+        combined_end = combined_events[ti + 1]
+        stim_events_in_interval = combined_stim_ts[combined_start:combined_end]
+
+        detected_events = combined_end - combined_start
+        first_stim_ts = (
+            stim_events_in_interval[0] if len(stim_events_in_interval) > 0 else np.nan
+        )
 
         trial_dict = {
             "trial_rate": len(behavior_data.stimulus_event_timestamps[ti]),
-            "detected_events": stim_end - stim_start,
+            "detected_events": detected_events,
             "trial_start": start_time,
             "stim_ts": stim_events_in_interval,
-            "first_stim_ts": (
-                stim_events_in_interval[0]
-                if len(stim_events_in_interval) > 0
-                else np.nan
-            ),
+            "first_stim_ts": first_stim_ts,
             "stimulus_modality": behavior_data.stimulus_modality[ti],
             "response_side": behavior_data.response_side[ti],
             "correct_side": behavior_data.correct_side[ti],
@@ -175,15 +229,17 @@ def get_trial_ts(trial_starts, stim_ts, behavior_data, port_events=None):
                     mask = (event_times > start_time) & (event_times < end_time)
                     trial_dict[f"{port_name}_{event_type}"] = event_times[mask]
 
+        trial_dict.update(stim_dict)
+
         trial_data.append(trial_dict)
 
     return pd.DataFrame(trial_data)
 
 
 def detect_stim_events(
-    time_vector, srate, analog_signal, amp_threshold=5000, time_threshold=0.04
+    time_vector, srate, signal, amp_threshold=5000, time_threshold=0.04
 ):
-    ii = np.where(np.diff(analog_signal > amp_threshold) == 1)[0]
+    ii = np.where(np.diff(signal > amp_threshold) == 1)[0]
     return time_vector[ii[np.diff(np.hstack([0, ii])) > time_threshold * srate]]
 
 

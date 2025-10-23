@@ -6,12 +6,16 @@ import re
 import sys
 from os.path import join as pjoin
 from glob import glob
+
+# Add parent directory to Python path to allow imports from ephys package
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
 import spks  # type: ignore
-from ephys.utils_IO import load_sync_data, process_port_events, process_trial_data  # type: ignore
-from ephys.utils_neural import get_good_units, get_cluster_spike_times  # type: ignore
+from ephys.utils.utils_IO import load_sync_data, process_port_events, process_trial_data  # type: ignore
+from ephys.utils.utils_neural import get_good_units, get_cluster_spike_times  # type: ignore
 from tqdm import tqdm
 
-data_path = "/Volumes/grb_ephys/data"
+data_path = "/Volumes/red_ssd/data"
 local_data_path = "/Users/gabriel/data"
 mice_paths = glob(pjoin(data_path, "GRB*"))
 
@@ -119,9 +123,13 @@ for mouse in mice:
                 continue
 
             print(f"Loading sync data for session: {session}")
-            corrected_onsets, corrected_offsets, t, srate, analog_signal = (
-                load_sync_data(session_path)
-            )
+            (
+                corrected_onsets,
+                corrected_offsets,
+                t,
+                srate,
+                analog_signals,
+            ) = load_sync_data(session_path)
 
             print("Processing port events...")
             trial_starts, port_events = process_port_events(
@@ -129,12 +137,12 @@ for mouse in mice:
             )
 
             print("Processing trial data...")
-            behavior_data, trial_ts = process_trial_data(
+            behavior_data, trial_ts, stim_ts_per_channel = process_trial_data(
                 session_path,
                 trial_starts,
                 t,
                 srate,
-                analog_signal,
+                analog_signals,
                 port_events,
                 mouse,
                 session,

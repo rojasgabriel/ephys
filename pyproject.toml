@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ephys-analysis"
+version = "0.1.0"
+description = "Analyses for studying the impact of movements on V1 activity during freely-moving decision making."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Gabriel Rojas" }]
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "scipy",
+]
+
+[project.optional-dependencies]
+experiments = [
+    "spks",
+    "chiCa",
+]
+
+[tool.setuptools.packages.find]
+include = ["ephys", "ephys.*"]

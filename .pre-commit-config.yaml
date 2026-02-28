@@ -4,7 +4,6 @@ repos:
     hooks:
     -   id: check-yaml
     -   id: check-json
-    -   id: pretty-format-json
     -   id: requirements-txt-fixer
     -   id: end-of-file-fixer
     -   id: trailing-whitespace
@@ -20,4 +19,4 @@ repos:
           args: [ --fix ]
         # Run the formatter.
         - id: ruff-format
-exclude: '(?i)\.(svg|key|png|stl|form|ipynb)$'
+exclude: '(?i)\.(svg|key|png|stl|form)$'

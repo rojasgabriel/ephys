@@ -20,4 +20,4 @@ repos:
           args: [ --fix ]
         # Run the formatter.
         - id: ruff-format
-exclude: '(?i)\.(svg|key|png)$'
+exclude: '(?i)\.(svg|key|png|stl|form)$'

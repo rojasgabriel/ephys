@@ -1,26 +1,16 @@
-[build-system]
-requires = ["setuptools<80", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "ephys-analysis"
+name = "ephys"
 version = "0.1.0"
-description = "Analyses for studying the impact of movements on V1 activity during freely-moving decision making."
+description = "code for analyzing my ephys data in the Churchland Lab"
 readme = "README.md"
 requires-python = ">=3.10"
-authors = [{ name = "Gabriel Rojas" }]
 dependencies = [
-    "numpy",
-    "pandas",
-    "matplotlib",
-    "scipy",
-]
-
-[project.optional-dependencies]
-experiments = [
+    "ipykernel>=7.2.0",
+    "labdata>=0.0.22",
+    "scipy>=1.15.3",
+    "seaborn>=0.13.2",
     "spks",
-    "chiCa",
 ]
 
-[tool.setuptools.packages.find]
-include = ["ephys", "ephys.*"]
+[tool.uv.sources]
+spks = { git = "https://github.com/spkware/spks" }

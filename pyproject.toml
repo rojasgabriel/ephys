@@ -5,7 +5,9 @@ description = "code for analyzing my ephys data in the Churchland Lab"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "alive-progress>=3.3.0",
     "ipykernel>=7.2.0",
+    "ipywidgets>=8.1.8",
     "labdata>=0.0.22",
     "scipy>=1.15.3",
     "seaborn>=0.13.2",

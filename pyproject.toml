@@ -1,7 +1,7 @@
 [project]
 name = "ephys"
 version = "0.1.0"
-description = "Add your description here"
+description = "code for analyzing my ephys data in the Churchland Lab"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [

@@ -6,12 +6,8 @@ import matplotlib.cm as cm
 import matplotlib.colors as colors
 import matplotlib.widgets as mwidgets
 import seaborn as sns
+import os
 
-
-# Parse command-line arguments
-parser = argparse.ArgumentParser(description="Plot interactive survey map")
-parser.add_argument("txt_file", help="path to the survey map txt file")
-args = parser.parse_args()
 
 plt.rcParams["text.usetex"] = False
 plt.rcParams["svg.fonttype"] = "none"
@@ -19,7 +15,25 @@ plt.rcParams["font.sans-serif"] = "Arial"
 plt.rcParams["font.size"] = 12
 plt.rcParams["figure.dpi"] = 100
 
-survey_map = pd.read_csv(args.txt_file, sep="\t")
+parser = argparse.ArgumentParser(description="Plot interactive survey map")
+parser.add_argument(
+    "-f",
+    dest="file",
+    help="Path to the survey map file. Accepts .txt and .csv",
+    default=None,
+    required=True,
+)
+args = parser.parse_args()
+
+if not os.path.exists(args.file):
+    raise FileNotFoundError()
+
+if args.file.endswith(".txt"):
+    survey_map = pd.read_csv(args.file, sep="\t")
+elif args.file.endswith(".csv"):
+    survey_map = pd.read_csv(args.file)
+else:
+    raise NotImplementedError("Please provide a .txt or .csv file instead.")
 
 pal = "rocket_r"
 vmin = 1

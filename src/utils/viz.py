@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.axes import Axes
+from matplotlib.colorbar import Colorbar
 from typing import Optional, Literal
 from labdata.schema import (  # type: ignore
     Dataset,
@@ -43,7 +44,7 @@ class PSTHViewer:
         self.fig = figure
         self.ax = axes
         self._cax: Optional[Axes] = None  # dedicated axes for colorbar
-        self._colorbar = None
+        self._colorbar: Optional[Colorbar] = None
 
         # to be filled by compute()
         self.peth = None  # (units, trials, timebins)

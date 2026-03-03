@@ -1,228 +1,277 @@
-# Useful functions for my ephys analyses
-# Gabriel Rojas Bowe - Jun 2024
-
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
+from typing import Optional, Literal
+from labdata.schema import (  # type: ignore
+    Dataset,
+    DatasetEvents,
+    SpikeSorting,
+    UnitMetrics,
+    EphysRecording,
+    UnitCount,
+)
+from spks.viz import plot_event_aligned_raster  # type: ignore
+from spks.event_aligned import population_peth  # type: ignore
+from scipy.stats import sem
+import ipywidgets as widgets  # type: ignore
+from IPython.display import display
 
 
-def plot_psth(
-    mean_sem_func,
-    pre_seconds,
-    post_seconds,
-    binwidth_ms,
-    window_ms=None,
-    xlabel=None,
-    ylabel=None,
-    fig_title=None,
-    data_label=None,
-    color="b",
-    ax=None,
-    tight=True,
-    vline=True,
-):
-    mean, sem = mean_sem_func
-    x = np.arange(-pre_seconds, post_seconds, binwidth_ms / 1000)
+class PSTHViewer:
+    def __init__(
+        self,
+        subject: Optional[str] = None,
+        session: Optional[str] = None,
+        unit_criteria_id: int = 1,
+        pre_seconds: float = 1,
+        post_seconds: float = 1,
+        binwidth_ms: int = 10,
+        plot_type: Literal["raster", "heatmap", "psth"] = "raster",
+        figure: Optional[Figure] = None,
+        axes: Optional[Axes] = None,
+    ) -> None:
 
-    if window_ms is not None:
-        window_size_bins = int(window_ms / binwidth_ms)
-        if window_size_bins >= len(x):
-            raise ValueError(
-                "Smoothing window is too large compared to the data length."
+        self.subject = subject
+        self.session = session
+        self.unit_criteria_id = unit_criteria_id
+        self.pre_seconds = pre_seconds
+        self.post_seconds = post_seconds
+        self.binwidth_ms = binwidth_ms
+        self.plot_type = plot_type
+        self.fig = figure
+        self.ax = axes
+        self._cax: Optional[Axes] = None  # dedicated axes for colorbar
+        self._colorbar = None
+
+        # to be filled by compute()
+        self.peth = None  # (units, trials, timebins)
+        self.mean_peth = None  # (units, timebins)
+        self.sem_peth = None  # (units, timebins)
+        self.bin_centers = None  # (timebins,)
+
+    def compute(self):
+        """Run population_peth and cache results."""
+        sess_query = (
+            SpikeSorting()
+            & f'subject_name = "{self.subject}"'
+            & f'session_name = "{self.session}"'
+        ).proj()
+
+        good_unit_ids = (
+            sess_query
+            * (
+                UnitCount.Unit
+                & f"unit_criteria_id = {self.unit_criteria_id}"
+                & "passes = 1"
             )
-        if window_size_bins > 1:
-            x = x[(window_size_bins - 1) // 2 : -(window_size_bins // 2)]
+        ).fetch("subject_name", "session_name", "unit_id", as_dict=True)
 
-    if len(x) != len(mean):
-        raise ValueError(
-            f"x and mean must have the same length, but got {len(x)} and {len(mean)}."
+        good_units = pd.DataFrame(
+            ((SpikeSorting.Unit & good_unit_ids) * UnitMetrics).fetch(
+                "unit_id", "spike_times", "depth", as_dict=True
+            )
         )
 
-    if not ax:
-        ax = plt.gca()
+        dset = (Dataset() & sess_query).proj()
+        events = DatasetEvents.Digital() & dset
+        events = pd.DataFrame(events.fetch_synced())
 
-    ax.plot(x, mean, color=color, alpha=0.5, label=data_label)
-    ax.fill_between(x, mean - sem, mean + sem, color=color, alpha=0.3)
+        # make sure this matches the mapping of inputs for the session of interest...
+        align_ev = {
+            "stim": events.query("event_name == '0'").event_timestamps.values[0],
+            "trial_start": events.query("event_name == '2'").event_timestamps.values[0],
+            "frames": events.query("event_name == '3'").event_timestamps.values[0],
+            "left_port": events.query("event_name == '4'").event_timestamps.values[0],
+            "center_port": events.query("event_name == '5'").event_timestamps.values[0],
+            "right_port": events.query(
+                "event_name == '6' & stream_name == 'obx'"
+            ).event_timestamps.values[0],
+        }
 
-    if vline:
-        ax.vlines(
-            0,
-            ymin=mean.min(),
-            ymax=mean.max(),
-            color="k",
-            linestyles="dashed",
-            alpha=0.5,
+        stim = align_ev["stim"]
+        stim_ev = np.concatenate([[stim[0]], stim[1:][np.diff(stim) > 0.025]])
+        first_stim_ev = np.concatenate([[stim[0]], stim[1:][np.diff(stim) > 1]])
+        align_ev.update({"stim_ev": stim_ev, "first_stim_ev": first_stim_ev})
+
+        srate = float(
+            (EphysRecording.ProbeSetting() & sess_query).fetch("sampling_rate")[0]
+        )
+        good_units = good_units.sort_values("depth", ascending=True)
+        st_per_unit = {
+            row["unit_id"]: row["spike_times"] / srate
+            for _, row in good_units.iterrows()
+        }
+
+        return st_per_unit, align_ev
+
+    def plot(
+        self,
+        spike_times: np.ndarray,
+        event_times: np.ndarray,
+        all_spike_times: Optional[dict] = None,
+    ) -> None:
+        """Plot raster, psth, or population heatmap onto self.ax."""
+        if self.ax is None or self.fig is None:
+            return
+        self.ax.cla()
+        # hide colorbar axes by default; heatmap will re-show it
+        if self._cax is not None:
+            self._cax.cla()
+            self._cax.set_visible(False)
+        binwidth_s = self.binwidth_ms / 1000.0
+
+        if self.plot_type == "raster":
+            plot_event_aligned_raster(
+                event_times=event_times,
+                spike_times=spike_times,
+                pre_seconds=self.pre_seconds,  # type: ignore
+                post_seconds=self.post_seconds,  # type: ignore
+                ax=self.ax,
+            )
+            ymin, ymax = self.ax.get_ylim()
+            self.ax.vlines(0, ymin, ymax, colors="r", linestyles="--")
+            self.ax.set_xlabel("time from event (s)")
+            self.ax.set_ylabel("trial")
+
+        elif self.plot_type == "psth":
+            peth, timebin_edges, _ = population_peth(
+                all_spike_times=[spike_times],
+                alignment_times=event_times,
+                pre_seconds=self.pre_seconds,
+                post_seconds=self.post_seconds,
+                binwidth_ms=self.binwidth_ms,
+                kernel=None,
+                pad=0,
+            )
+            # peth returns spike counts per bin — divide by bin width to get sp/s
+            # peth shape: (1, n_trials, n_timebins)
+            mean_fr = np.mean(peth[0], axis=0) / binwidth_s
+            sem_fr = sem(peth[0], axis=0) / binwidth_s
+            bin_centers = (timebin_edges[:-1] + timebin_edges[1:]) / 2.0
+            self.ax.plot(bin_centers, mean_fr, color="k")
+            self.ax.fill_between(
+                bin_centers,
+                mean_fr - sem_fr,
+                mean_fr + sem_fr,
+                alpha=0.3,
+                color="k",
+            )
+            ymin, ymax = self.ax.get_ylim()
+            self.ax.vlines(0, ymin, ymax, colors="r", linestyles="--")
+            self.ax.set_xlabel("time from event (s)")
+            self.ax.set_ylabel("sp/s")
+
+        elif self.plot_type == "heatmap":
+            if all_spike_times is None:
+                return
+            unit_ids = list(all_spike_times.keys())
+            peth, timebin_edges, _ = population_peth(
+                all_spike_times=list(all_spike_times.values()),
+                alignment_times=event_times,
+                pre_seconds=self.pre_seconds,
+                post_seconds=self.post_seconds,
+                binwidth_ms=self.binwidth_ms,
+                kernel=None,
+                pad=0,
+            )
+            # peth shape: (n_units, n_trials, n_timebins)
+            # average across trials and convert to sp/s
+            pop_matrix = np.mean(peth, axis=1) / binwidth_s  # (n_units, n_timebins)
+            n_units = pop_matrix.shape[0]
+            im = self.ax.imshow(
+                pop_matrix,
+                aspect="auto",
+                origin="upper",
+                extent=(-self.pre_seconds, self.post_seconds, float(n_units), 0.0),
+                cmap="afmhot_r",
+            )
+            self.ax.vlines(0, 0, n_units, colors="cyan", linestyles="--", linewidth=0.8)
+            # label y-ticks with real unit IDs
+            tick_step = max(1, n_units // 10)
+            tick_indices = list(range(0, n_units, tick_step))
+            self.ax.set_yticks([i + 0.5 for i in tick_indices])
+            self.ax.set_yticklabels(
+                [str(unit_ids[i]) for i in tick_indices], fontsize=7
+            )
+            self.ax.set_xlabel("time from event (s)")
+            self.ax.set_ylabel("unit ID (sorted by depth)")
+            if self._cax is not None:
+                self._cax.set_visible(True)
+                self._colorbar = self.fig.colorbar(im, cax=self._cax, label="sp/s")
+
+        if self.fig is not None:
+            self.fig.canvas.draw_idle()
+
+
+class PSTHWidget:
+    def __init__(self, viewer: PSTHViewer) -> None:
+        self.viewer = viewer
+
+        # fetch data once on init
+        self.st_per_unit, self.align_ev = viewer.compute()
+
+        # build widgets
+        self.unit_slider = widgets.SelectionSlider(
+            options=list(self.st_per_unit.keys()),
+            value=list(self.st_per_unit.keys())[0],
+            description="Unit ID:",
+            continuous_update=False,
+        )
+        self.event_dropdown = widgets.Dropdown(
+            options=list(self.align_ev.keys()),
+            value="first_stim_ev",
+            description="Event:",
+        )
+        self.plot_type_toggle = widgets.RadioButtons(
+            options=["raster", "psth", "heatmap"],
+            value=self.viewer.plot_type,
+            description="Plot type:",
         )
 
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.set_title(fig_title, fontsize=10)
+        # wire up callbacks
+        self.unit_slider.observe(self._update, names="value")
+        self.event_dropdown.observe(self._update, names="value")
+        self.plot_type_toggle.observe(self._on_plot_type_change, names="value")
 
-    if tight:
-        plt.tight_layout()
+    def _on_plot_type_change(self, change: object) -> None:
+        self.viewer.plot_type = self.plot_type_toggle.value
+        self.unit_slider.disabled = self.viewer.plot_type == "heatmap"
+        self._update(None)
 
-    if data_label:
-        ax.legend()
-
-
-def plot_cluster_info_histograms(clu):
-    """Plots quality control metrics for Kilosort results. Works with the spks.clusters.Clusters object"""
-    # Setup
-    fig, axs = plt.subplots(3, 2, tight_layout=True, figsize=(10, 6))
-    n_bins = 50
-
-    # Calculate the total number of neurons
-    total_neurons = len(clu.cluster_info)
-
-    # Calculate the excluded samples
-    excluded_peak_amplitude = np.sum(
-        np.abs(clu.cluster_info.trough_amplitude - clu.cluster_info.peak_amplitude)
-        <= 50
-    )
-    excluded_isi_contamination = np.sum(clu.cluster_info.isi_contamination > 0.1)
-    excluded_spike_duration = np.sum(clu.cluster_info.spike_duration <= 0.1)
-    excluded_presence_ratio = np.sum(clu.cluster_info.presence_ratio <= 0.6)
-    excluded_amplitude_cutoff = np.sum(clu.cluster_info.amplitude_cutoff > 0.1)
-
-    # Set the figure title
-    fig.suptitle(
-        f"Total clusters: {total_neurons}\n Shaded area indicates excluded clusters by metric",
-        fontsize=14,
-    )
-
-    # ------- Plot histograms ------- #
-
-    # spike amplitude
-    axs[0, 0].hist(
-        np.abs(clu.cluster_info.trough_amplitude - clu.cluster_info.peak_amplitude),
-        bins=n_bins,
-        alpha=0.5,
-        color="b",
-    )
-    axs[0, 0].axvline(x=50, color="b", linestyle="--")
-    axs[0, 0].fill_betweenx(
-        y=axs[0, 0].get_ylim(),
-        x1=max(axs[0, 0].get_xlim()[0], 0),
-        x2=50,
-        color="b",
-        alpha=0.1,
-    )
-    axs[0, 0].set_xlabel("spike amplitude")
-    axs[0, 0].set_ylabel("counts")
-    axs[0, 0].set_title(f"n = {excluded_peak_amplitude}")
-
-    # ISI contamination
-    axs[1, 0].hist(
-        clu.cluster_info.isi_contamination, bins=n_bins, alpha=0.5, color="g"
-    )
-    axs[1, 0].axvline(x=0.1, color="g", linestyle="--")
-    axs[1, 0].fill_betweenx(
-        y=axs[1, 0].get_ylim(),
-        x1=0.1,
-        x2=min(axs[1, 0].get_xlim()[1], axs[1, 0].get_xlim()[1]),
-        color="g",
-        alpha=0.1,
-    )
-    axs[1, 0].set_xlabel("isi_contamination")
-    axs[1, 0].set_ylabel("counts")
-    axs[1, 0].set_title(f"n = {excluded_isi_contamination}")
-
-    # spike duration
-    axs[2, 0].hist(clu.cluster_info.spike_duration, bins=n_bins, alpha=0.5, color="r")
-    axs[2, 0].axvline(x=0.1, color="r", linestyle="--")
-    axs[2, 0].fill_betweenx(
-        y=axs[2, 0].get_ylim(),
-        x1=max(axs[2, 0].get_xlim()[0], 0),
-        x2=0.1,
-        color="r",
-        alpha=0.1,
-    )
-    axs[2, 0].set_xlabel("spike_duration")
-    axs[2, 0].set_ylabel("counts")
-    axs[2, 0].set_title(f"n = {excluded_spike_duration}")
-
-    # presence ratio
-    axs[0, 1].hist(
-        clu.cluster_info.presence_ratio, bins=n_bins, alpha=0.5, color="orange"
-    )
-    axs[0, 1].axvline(x=0.6, color="orange", linestyle="--")
-    axs[0, 1].fill_betweenx(
-        y=axs[0, 1].get_ylim(),
-        x1=max(axs[0, 1].get_xlim()[0], 0),
-        x2=0.6,
-        color="orange",
-        alpha=0.1,
-    )
-    axs[0, 1].set_xlabel("presence_ratio")
-    axs[0, 1].set_ylabel("counts")
-    axs[0, 1].set_title(f"n = {excluded_presence_ratio}")
-
-    # amplitude cutoff
-    axs[1, 1].hist(
-        clu.cluster_info.amplitude_cutoff, bins=n_bins, alpha=0.5, color="purple"
-    )
-    axs[1, 1].axvline(x=0.1, color="purple", linestyle="--")
-    axs[1, 1].fill_betweenx(
-        y=axs[1, 1].get_ylim(),
-        x1=0.1,
-        x2=min(axs[1, 1].get_xlim()[1], axs[1, 1].get_xlim()[1]),
-        color="purple",
-        alpha=0.1,
-    )
-    axs[1, 1].set_xlabel("amplitude_cutoff")
-    axs[1, 1].set_ylabel("counts")
-    axs[1, 1].set_title(f"n = {excluded_amplitude_cutoff}")
-
-    # depth - not used for filtering out clusters
-    axs[2, 1].hist(clu.cluster_info.depth, bins=n_bins, alpha=0.5, color="c")
-    axs[2, 1].set_xlabel("depth")
-    axs[2, 1].set_ylabel("counts")
-
-
-def plot_scatter_panel(
-    ax,
-    x_data,
-    y_data,
-    xlabel,
-    ylabel,
-    x_err=None,
-    y_err=None,
-    c="black",
-    highlight_idx=None,
-    plot_unity=False,
-):
-    """Plot a scatter comparison with standard formatting and optional error bars and highlights."""
-    # Regular scatter plot
-    ax.errorbar(
-        x_data,
-        y_data,
-        xerr=x_err,
-        yerr=y_err,
-        fmt="o",
-        color=c,
-        alpha=0.2,
-        ecolor="gray",
-        elinewidth=1,
-        capsize=2,
-    )
-
-    # Add highlights if specified
-    if highlight_idx is not None:
-        ax.plot(
-            x_data[highlight_idx],
-            y_data[highlight_idx],
-            "o",
-            mfc="none",
-            mec="red",
-            ms=15,
-            mew=2,
+    def _update(self, change: object) -> None:
+        unit_id = self.unit_slider.value
+        event = self.event_dropdown.value
+        self.viewer.plot(
+            spike_times=self.st_per_unit[unit_id],
+            event_times=self.align_ev[event],
+            all_spike_times=self.st_per_unit,
         )
 
-    if plot_unity:
-        min_val = min(np.min(x_data), np.min(y_data))
-        max_val = max(np.max(x_data), np.max(y_data))
-        ax.plot([min_val, max_val], [min_val, max_val], "k--", alpha=0.5)
+    def show(self) -> None:
+        if self.viewer.fig is None:
+            with plt.ioff():
+                self.viewer.fig = plt.figure(figsize=(6, 5))
+                gs = self.viewer.fig.add_gridspec(
+                    1, 2, width_ratios=[20, 1], wspace=0.05
+                )
+                self.viewer.ax = self.viewer.fig.add_subplot(gs[0])
+                self.viewer._cax = self.viewer.fig.add_subplot(gs[1])
+                self.viewer._cax.set_visible(False)
 
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.tick_params(axis="both", which="major")
-    ax.set_aspect("equal")
+        self._out = widgets.Output()
+        with self._out:
+            display(self.viewer.fig.canvas)
+
+        display(
+            widgets.VBox(
+                [
+                    widgets.HBox(
+                        [self.unit_slider, self.event_dropdown, self.plot_type_toggle]
+                    ),
+                    self._out,
+                ]
+            )
+        )
+        self._update(None)

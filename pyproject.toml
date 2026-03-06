@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "alive-progress>=3.3.0",
+    "diptest>=0.10.0",
     "h5py>=3.15.1",
     "ipykernel>=7.2.0",
     "ipympl>=0.10.0",

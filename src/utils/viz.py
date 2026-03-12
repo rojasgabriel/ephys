@@ -5,19 +5,16 @@ from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 from matplotlib.colorbar import Colorbar
 from typing import Optional, Literal
-from labdata.schema import (  # type: ignore
-    Dataset,
-    DatasetEvents,
-    SpikeSorting,
-    UnitMetrics,
-    EphysRecording,
-    UnitCount,
-)
 from spks.viz import plot_event_aligned_raster  # type: ignore
 from spks.event_aligned import population_peth  # type: ignore
 from scipy.stats import sem
 import ipywidgets as widgets  # type: ignore
 from IPython.display import display, clear_output
+from ephys.src.utils.utils_IO import (
+    fetch_good_units,
+    fetch_session_events,
+    fetch_trial_metadata,
+)
 
 
 class PSTHViewer:
@@ -30,6 +27,8 @@ class PSTHViewer:
         post_seconds: float = 1,
         binwidth_ms: int = 10,
         plot_type: Literal["raster", "heatmap", "psth"] = "raster",
+        t_rise: Optional[float] = None,
+        t_decay: Optional[float] = None,
         figure: Optional[Figure] = None,
         axes: Optional[Axes] = None,
     ) -> None:
@@ -47,6 +46,18 @@ class PSTHViewer:
         self._cax: Optional[Axes] = None  # dedicated axes for colorbar
         self._colorbar: Optional[Colorbar] = None
 
+        self._kernel = None
+        if t_rise is not None and t_decay is not None:
+            from spks.utils import alpha_function  # type: ignore
+
+            decay_bins = t_decay / (binwidth_ms / 1000)
+            self._kernel = alpha_function(
+                int(decay_bins * 15),
+                t_rise=t_rise,
+                t_decay=decay_bins,
+                srate=1.0 / (binwidth_ms / 1000),
+            )
+
         # to be filled by compute()
         self.peth = None  # (units, trials, timebins)
         self.mean_peth = None  # (units, timebins)
@@ -56,100 +67,14 @@ class PSTHViewer:
     def compute(
         self,
     ) -> tuple[dict[int, np.ndarray], dict[str, np.ndarray], Optional[pd.DataFrame]]:
-        """Run population_peth and cache results."""
-        sess_query = (
-            SpikeSorting()
-            & f'subject_name = "{self.subject}"'
-            & f'session_name = "{self.session}"'
-        ).proj()
-
-        good_unit_ids = (
-            sess_query
-            * (
-                UnitCount.Unit
-                & f"unit_criteria_id = {self.unit_criteria_id}"
-                & "passes = 1"
-            )
-        ).fetch("subject_name", "session_name", "unit_id", as_dict=True)
-
-        good_units = pd.DataFrame(
-            ((SpikeSorting.Unit & good_unit_ids) * UnitMetrics).fetch(
-                "unit_id", "spike_times", "depth", as_dict=True
-            )
-        )
-
-        dset = (Dataset() & sess_query).proj()
-        events = DatasetEvents.Digital() & dset
-        events = pd.DataFrame(events.fetch_synced())
-
-        # make sure this matches the mapping of inputs for the session of interest...
-        align_ev = {
-            "stim": events.query("event_name == '0'").event_timestamps.values[0],
-            "trial_start": events.query("event_name == '2'").event_timestamps.values[0],
-            "frames": events.query("event_name == '3'").event_timestamps.values[0],
-            "left_port": events.query("event_name == '4'").event_timestamps.values[0],
-            "center_port": events.query("event_name == '5'").event_timestamps.values[0],
-            "right_port": events.query(
-                "event_name == '6' & stream_name == 'obx'"
-            ).event_timestamps.values[0],
-        }
-
-        stim = align_ev["stim"]
-        stim_ev = np.concatenate([[stim[0]], stim[1:][np.diff(stim) > 0.025]])
-        first_stim_ev = np.concatenate([[stim[0]], stim[1:][np.diff(stim) > 1]])
-        align_ev.update({"stim_ev": stim_ev, "first_stim_ev": first_stim_ev})
-
-        srate = float(
-            (EphysRecording.ProbeSetting() & sess_query).fetch("sampling_rate")[0]
-        )
-        good_units = good_units.sort_values("depth", ascending=True)
-        st_per_unit = {
-            row["unit_id"]: row["spike_times"] / srate
-            for _, row in good_units.iterrows()
-        }
-
-        # --- trial metadata ---
-        trial_df: Optional[pd.DataFrame] = None
-        try:
-            from chipmunk import Chipmunk  # type: ignore
-
-            sess_dicts = (
-                SpikeSorting()
-                & f'subject_name = "{self.subject}"'
-                & f'session_name = "{self.session}"'
-            ).fetch("subject_name", "session_name", as_dict=True)
-
-            trial_data = (
-                (Chipmunk() & sess_dicts)
-                * Chipmunk.Trial().proj("response", "rewarded")
-                * Chipmunk.TrialParameters().proj(
-                    "stim_rate_vision", "category_boundary"
-                )
-            ).fetch(format="frame")
-            tdf: pd.DataFrame = trial_data.reset_index(
-                level=["subject_name", "session_name", "dataset_name"], drop=True
-            ).sort_index()
-
-            # positionally align with OBX trial_start timestamps
-            trial_starts = align_ev["trial_start"]
-            n = min(len(trial_starts), len(tdf))
-            if len(trial_starts) != len(tdf):
-                print(
-                    f"Warning: {len(trial_starts)} OBX trial_start pulses vs "
-                    f"{len(tdf)} Chipmunk trials — using first {n}"
-                )
-            trial_df = tdf.iloc[:n].copy()
-            trial_df["trial_start_ts"] = trial_starts[:n]
-            trial_df["prev_rewarded"] = trial_df["rewarded"].shift(1)
-            trial_df["prev_response"] = trial_df["response"].shift(1)
-            trial_df["stim_category"] = pd.cut(
-                trial_df["stim_rate_vision"] - trial_df["category_boundary"],
-                bins=[-np.inf, -1e-9, 1e-9, np.inf],
-                labels=["low_rate", "boundary", "high_rate"],
-            )
-        except Exception as e:
-            print(f"Could not load Chipmunk trial metadata: {e}")
-
+        """Fetch session data (units, events, trial metadata)."""
+        if self.subject is None or self.session is None:
+            raise ValueError("subject and session must be set before calling compute()")
+        subject: str = self.subject
+        session: str = self.session
+        st_per_unit = fetch_good_units(subject, session, self.unit_criteria_id)
+        align_ev = fetch_session_events(subject, session)
+        trial_df = fetch_trial_metadata(subject, session, align_ev)
         return st_per_unit, align_ev, trial_df
 
     def plot(
@@ -188,7 +113,7 @@ class PSTHViewer:
                 pre_seconds=self.pre_seconds,
                 post_seconds=self.post_seconds,
                 binwidth_ms=self.binwidth_ms,
-                kernel=None,
+                kernel=self._kernel,
                 pad=0,
             )
             # peth returns spike counts per bin — divide by bin width to get sp/s
@@ -219,7 +144,7 @@ class PSTHViewer:
                 pre_seconds=self.pre_seconds,
                 post_seconds=self.post_seconds,
                 binwidth_ms=self.binwidth_ms,
-                kernel=None,
+                kernel=self._kernel,
                 pad=0,
             )
             # peth shape: (n_units, n_trials, n_timebins)
@@ -316,7 +241,7 @@ class PSTHViewer:
                     pre_seconds=self.pre_seconds,
                     post_seconds=self.post_seconds,
                     binwidth_ms=self.binwidth_ms,
-                    kernel=None,
+                    kernel=self._kernel,
                     pad=0,
                 )
                 mean_fr = np.mean(peth[0], axis=0) / binwidth_s
@@ -343,7 +268,7 @@ class PSTHViewer:
                     pre_seconds=self.pre_seconds,
                     post_seconds=self.post_seconds,
                     binwidth_ms=self.binwidth_ms,
-                    kernel=None,
+                    kernel=self._kernel,
                     pad=0,
                 )
                 pop_matrix = np.mean(peth, axis=1) / binwidth_s

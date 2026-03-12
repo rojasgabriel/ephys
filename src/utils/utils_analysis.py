@@ -1,5 +1,308 @@
 import pandas as pd
 import numpy as np
+import scipy.stats as stats
+from scipy.signal import find_peaks
+from statsmodels.stats.multitest import multipletests
+from typing import Optional, Sequence
+from spks.event_aligned import population_peth  # type: ignore
+
+
+def compute_population_peth(
+    spike_times_per_unit: Sequence[np.ndarray],
+    alignment_times: np.ndarray,
+    pre_seconds: float = 0.1,
+    post_seconds: float = 0.15,
+    binwidth_ms: int = 10,
+    t_rise: Optional[float] = None,
+    t_decay: Optional[float] = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Compute population PETH aligned to event times.
+
+    Args:
+        spike_times_per_unit: list/sequence of arrays, one per unit (seconds).
+        alignment_times: array of event times to align to (seconds).
+        pre_seconds: time before event.
+        post_seconds: time after event.
+        binwidth_ms: bin width in milliseconds.
+        t_rise: alpha-function rise time (seconds). If None, no smoothing.
+        t_decay: alpha-function decay time (seconds). If None, no smoothing.
+
+    Returns:
+        peth: array (n_units, n_trials, n_timebins)
+        bin_edges: array (n_timebins + 1,) in seconds relative to event
+        bin_centers: array (n_timebins,) in seconds relative to event
+    """
+    kernel = None
+    if t_rise is not None and t_decay is not None:
+        from spks.utils import alpha_function  # type: ignore
+
+        decay_bins = t_decay / (binwidth_ms / 1000)
+        kernel = alpha_function(
+            int(decay_bins * 15),
+            t_rise=t_rise,
+            t_decay=decay_bins,
+            srate=1.0 / (binwidth_ms / 1000),
+        )
+
+    peth, bin_edges, event_index = population_peth(
+        all_spike_times=spike_times_per_unit,
+        alignment_times=alignment_times,
+        pre_seconds=pre_seconds,
+        post_seconds=post_seconds,
+        binwidth_ms=binwidth_ms,
+        kernel=kernel,
+    )
+    # Convert spike counts per bin to firing rate (sp/s)
+    peth = peth / (binwidth_ms / 1000.0)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+    return peth, bin_edges, bin_centers
+
+
+def compute_unit_selectivity(
+    peth: np.ndarray,
+    bin_edges: np.ndarray,
+    unit_ids: Sequence,
+    base_window: tuple[float, float] = (-0.1, 0.0),
+    resp_window: tuple[float, float] = (0.04, 0.10),
+    test: str = "wilcoxon",
+    correction: str = "fdr_bh",
+    alpha: float = 0.05,
+) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
+    """Compute baseline vs response selectivity per unit.
+
+    Args:
+        peth: array (n_units, n_trials, n_timepoints) of firing rates (spk/s)
+        bin_edges: array (n_timepoints + 1,) of bin edges in seconds relative to event
+        unit_ids: sequence of unit IDs matching peth's first axis
+        base_window: (start, end) seconds for baseline
+        resp_window: (start, end) seconds for response
+        test: 'wilcoxon' (default) or 'ttest'
+        correction: multiple-comparisons method passed to
+            statsmodels.stats.multitest.multipletests, e.g. 'fdr_bh'
+            (Benjamini-Hochberg, default) or 'bonferroni'.
+        alpha: significance threshold applied to corrected p-values
+
+    Returns:
+        results_df: DataFrame with per-unit stats
+        masks: dict with boolean masks (excited, suppressed, selective)
+    """
+    n_units, n_trials, n_time = peth.shape
+    if len(unit_ids) != n_units:
+        raise ValueError(f"len(unit_ids)={len(unit_ids)} != peth n_units={n_units}")
+    t_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+
+    base_mask = (t_centers >= base_window[0]) & (t_centers < base_window[1])
+    resp_mask = (t_centers >= resp_window[0]) & (t_centers < resp_window[1])
+
+    if not base_mask.any() or not resp_mask.any():
+        raise ValueError("Baseline/response windows do not overlap available bins.")
+
+    base_rates = peth[:, :, base_mask].mean(axis=2)
+    resp_rates = peth[:, :, resp_mask].mean(axis=2)
+
+    pvals = np.ones(n_units, dtype=float)
+    deltas = np.zeros(n_units, dtype=float)
+    d_cohen = np.zeros(n_units, dtype=float)
+    mean_base = base_rates.mean(axis=1)
+    mean_resp = resp_rates.mean(axis=1)
+    si = (mean_resp - mean_base) / (mean_resp + mean_base + 1e-9)
+
+    for u in range(n_units):
+        x = resp_rates[u]
+        y = base_rates[u]
+        diff = x - y
+
+        deltas[u] = diff.mean()
+        sd = diff.std(ddof=1)
+        d_cohen[u] = deltas[u] / sd if sd > 0 else 0.0
+
+        if np.allclose(diff, 0):
+            pvals[u] = 1.0
+            continue
+
+        if test == "ttest":
+            _, pvals[u] = stats.ttest_rel(
+                x, y, alternative="two-sided", nan_policy="omit"
+            )
+        elif test == "wilcoxon":
+            try:
+                _, pvals[u] = stats.wilcoxon(
+                    x, y, zero_method="wilcox", alternative="two-sided"
+                )
+            except ValueError:
+                pvals[u] = 1.0
+        else:
+            raise ValueError("test must be 'wilcoxon' or 'ttest'")
+
+    _, qvals, _, _ = multipletests(pvals, alpha=alpha, method=correction)
+
+    excited = (qvals < alpha) & (deltas > 0)
+    suppressed = (qvals < alpha) & (deltas < 0)
+    selective_any = excited | suppressed
+
+    results_df = pd.DataFrame(
+        {
+            "unit": list(unit_ids),
+            "mean_base": mean_base,
+            "mean_resp": mean_resp,
+            "delta": deltas,
+            "cohen_d": d_cohen,
+            "si": si,
+            "p": pvals,
+            "q": qvals,
+            "excited": excited,
+            "suppressed": suppressed,
+            "selective": selective_any,
+        }
+    )
+
+    return results_df, {
+        "excited": excited,
+        "suppressed": suppressed,
+        "selective": selective_any,
+    }
+
+
+def classify_peak_count(
+    peth: np.ndarray,
+    bin_centers: np.ndarray,
+    unit_ids: Sequence,
+    search_window: tuple[float, float] = (0.0, 0.15),
+    baseline_window: tuple[float, float] = (-0.1, 0.0),
+    min_prominence_frac: float = 0.25,
+    min_prominence_abs: float = 1.0,
+    min_distance_ms: float = 20.0,
+    binwidth_ms: float = 10.0,
+    mode: str = "peaks",
+) -> pd.DataFrame:
+    """Classify units by the number of peaks (or dips) in their trial-averaged PSTH.
+
+    Uses scipy.signal.find_peaks with a prominence threshold that is the
+    *larger* of an adaptive per-unit fraction and an absolute floor.
+
+    In "peaks" mode, only excursions above baseline are counted.
+    In "dips" mode, the signal is inverted so that suppression troughs
+    are detected instead.
+
+    Args:
+        peth: array (n_units, n_trials, n_timebins) firing rates (sp/s).
+        bin_centers: array (n_timebins,) in seconds relative to event.
+        unit_ids: sequence of unit IDs matching peth's first axis.
+        search_window: (start, end) seconds to search for peaks/dips.
+        baseline_window: (start, end) seconds for baseline subtraction.
+        min_prominence_frac: minimum prominence as a fraction of
+            the unit's max excursion (0-1).
+        min_prominence_abs: absolute minimum prominence in sp/s. Acts as
+            a floor so that noise bumps in low-rate units are ignored.
+        min_distance_ms: minimum distance between peaks/dips in ms.
+        binwidth_ms: bin width in ms (used to convert distance to bins).
+        mode: "peaks" to detect excitatory peaks, "dips" to detect
+            suppression troughs.
+
+    Returns:
+        DataFrame with columns: unit, n_peaks, peak_times, peak_heights.
+        In "dips" mode, peak_heights are the actual (sub-baseline) firing
+        rates at the trough locations.
+    """
+    if mode not in ("peaks", "dips"):
+        raise ValueError("mode must be 'peaks' or 'dips'")
+
+    n_units = peth.shape[0]
+    if len(unit_ids) != n_units:
+        raise ValueError(f"len(unit_ids)={len(unit_ids)} != peth n_units={n_units}")
+
+    base_mask = (bin_centers >= baseline_window[0]) & (bin_centers < baseline_window[1])
+    search_mask = (bin_centers >= search_window[0]) & (bin_centers < search_window[1])
+    search_centers = bin_centers[search_mask]
+    dist_bins = max(1, int(round(min_distance_ms / binwidth_ms)))
+
+    records = []
+    for u in range(n_units):
+        mean_psth = peth[u].mean(axis=0)
+        baseline_mean = mean_psth[base_mask].mean() if base_mask.any() else 0.0
+        excess = mean_psth[search_mask] - baseline_mean
+
+        # In dips mode, invert so troughs become peaks for find_peaks
+        signal = -excess if mode == "dips" else excess
+
+        max_signal = signal.max()
+        if max_signal <= 0:
+            records.append(
+                dict(unit=unit_ids[u], n_peaks=0, peak_times=[], peak_heights=[])
+            )
+            continue
+
+        prom_thresh = max(min_prominence_frac * max_signal, min_prominence_abs)
+        detected, props = find_peaks(signal, prominence=prom_thresh, distance=dist_bins)
+
+        # Only keep detections on the correct side of baseline
+        if mode == "dips":
+            valid = excess[detected] < 0
+        else:
+            valid = excess[detected] > 0
+        detected = detected[valid]
+
+        peak_times = search_centers[detected].tolist()
+        peak_heights = (mean_psth[search_mask][detected]).tolist()
+
+        # Fallback: if no peaks survived but there IS a clear excursion,
+        # assign 1 peak at argmax (catches broad plateaus).
+        if len(detected) == 0 and max_signal > 0:
+            best = int(np.argmax(signal))
+            peak_times = [float(search_centers[best])]
+            peak_heights = [float(mean_psth[search_mask][best])]
+            records.append(
+                dict(
+                    unit=unit_ids[u],
+                    n_peaks=1,
+                    peak_times=peak_times,
+                    peak_heights=peak_heights,
+                )
+            )
+        else:
+            records.append(
+                dict(
+                    unit=unit_ids[u],
+                    n_peaks=len(detected),
+                    peak_times=peak_times,
+                    peak_heights=peak_heights,
+                )
+            )
+
+    return pd.DataFrame(records)
+
+
+def classify_peak_count_sweep(
+    peth: np.ndarray,
+    bin_centers: np.ndarray,
+    unit_ids: Sequence,
+    prominence_fracs: Optional[Sequence[float]] = None,
+    **kwargs,
+) -> pd.DataFrame:
+    """Run classify_peak_count across a range of prominence fractions.
+
+    Returns a tidy DataFrame with columns: prominence_frac, n_peaks, count.
+    Useful for plotting sensitivity of peak classification to the
+    prominence threshold.
+    """
+    if prominence_fracs is None:
+        prominence_fracs = np.arange(0.05, 0.55, 0.05)
+
+    rows = []
+    for frac in prominence_fracs:
+        df = classify_peak_count(
+            peth, bin_centers, unit_ids, min_prominence_frac=frac, **kwargs
+        )
+        counts = df["n_peaks"].value_counts()
+        for np_val, cnt in counts.items():
+            rows.append(
+                dict(
+                    prominence_frac=round(float(frac), 3),
+                    n_peaks=int(np_val),
+                    count=int(cnt),
+                )
+            )
+    return pd.DataFrame(rows)
 
 
 def calculate_stim_offsets(trial_ts, trial_start_col="center_port_entries"):

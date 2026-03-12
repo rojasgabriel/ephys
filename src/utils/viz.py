@@ -5,10 +5,10 @@ from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 from matplotlib.colorbar import Colorbar
 from typing import Optional, Literal
-from spks.viz import plot_event_aligned_raster  # type: ignore
-from spks.event_aligned import population_peth  # type: ignore
+from spks.viz import plot_event_aligned_raster
+from spks.event_aligned import population_peth
 from scipy.stats import sem
-import ipywidgets as widgets  # type: ignore
+import ipywidgets as widgets
 from IPython.display import display, clear_output
 from ephys.src.utils.utils_IO import (
     fetch_good_units,
@@ -48,7 +48,7 @@ class PSTHViewer:
 
         self._kernel = None
         if t_rise is not None and t_decay is not None:
-            from spks.utils import alpha_function  # type: ignore
+            from spks.utils import alpha_function
 
             decay_bins = t_decay / (binwidth_ms / 1000)
             self._kernel = alpha_function(
@@ -97,8 +97,8 @@ class PSTHViewer:
             plot_event_aligned_raster(
                 event_times=event_times,
                 spike_times=spike_times,
-                pre_seconds=self.pre_seconds,  # type: ignore
-                post_seconds=self.post_seconds,  # type: ignore
+                pre_seconds=self.pre_seconds,
+                post_seconds=self.post_seconds,
                 ax=self.ax,
             )
             ymin, ymax = self.ax.get_ylim()
@@ -224,8 +224,8 @@ class PSTHViewer:
                 plot_event_aligned_raster(
                     event_times=grp_event_times,
                     spike_times=spike_times,
-                    pre_seconds=self.pre_seconds,  # type: ignore
-                    post_seconds=self.post_seconds,  # type: ignore
+                    pre_seconds=self.pre_seconds,
+                    post_seconds=self.post_seconds,
                     ax=ax,
                 )
                 ymin, ymax = ax.get_ylim()

@@ -57,8 +57,28 @@ def fetch_session_events(
 ) -> dict[str, np.ndarray]:
     """Fetch digital events for a session and derive stimulus event arrays.
 
-    Returns a dict with keys: stim, trial_start, frames, left_port,
-    center_port, right_port, stim_ev, first_stim_ev.
+    Raw digital edges on the stim channel are noisy: a single logical pulse
+    toggles many times. They are merged into discrete bursts by splitting on
+    any gap > 20 ms, then each burst's duration is classified against the two
+    expected pulse widths (15 ms and 30 ms, ±2 ms tolerance). Bursts that
+    match neither are labeled "unknown" and excluded from the width-specific
+    streams but still appear in `stim_ev` / `first_stim_ev`.
+
+    `first_*` variants keep only the first onset within each 1 s window, so
+    they approximate the first pulse of each stimulus train — the cleaner
+    alignment event when comparing single-pulse responses (e.g. for the
+    double-peak analysis).
+
+    Returns a dict with the following keys (all np.ndarray of timestamps in
+    seconds, possibly empty):
+      - `stim`              : raw stim edges (no merging)
+      - `trial_start`, `frames`, `left_port`, `center_port`, `right_port`
+      - `stim_ev`           : onsets of all merged pulses (any width)
+      - `first_stim_ev`     : first-of-train onsets across all widths
+      - `stim_ev_15ms`      : onsets of pulses classified as 15 ms
+      - `stim_ev_30ms`      : onsets of pulses classified as 30 ms
+      - `first_stim_ev_15ms`: first-of-train onsets for 15 ms pulses only
+      - `first_stim_ev_30ms`: first-of-train onsets for 30 ms pulses only
     """
     sess_query = (
         SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'

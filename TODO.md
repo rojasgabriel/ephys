@@ -10,9 +10,9 @@
 
 ## Analysis TODOs
 
-- **GRB006 events pipeline**: currently fails because events are handled through the obx logic. Needs a path for sessions recorded on nidq. (Ported from `notebooks/to-do.ipynb`.)
+- **GRB006 events pipeline**: currently fails because events are handled through the obx logic. Needs a path for sessions recorded on nidq.
 - **Population summary**: compute % of units that are (a) stimulus-selective, (b) rate-selective, (c) double-peak. `selectivity.ipynb` already does the first; (b) and (c) still need tying together in a single summary.
-- **Data export for Marsa (GLM fitting)**: scratch code lives in `notebooks/to-do.ipynb`. Needs to produce:
+- **Data export for Marsa (GLM fitting)**: scratch code lives in `notebooks/export_data_for_marsa.ipynb`. Needs to produce:
   - `neural_data` DataFrame (one row per unit): `unit_id`, `spike_times`.
   - `behavior_data` DataFrame (one row per trial): `trial_start`, `center_poke`, `stim_onsets`, `left_poke`, `right_poke`.
 

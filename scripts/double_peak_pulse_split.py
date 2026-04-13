@@ -1,26 +1,27 @@
 """Double-peak PSTH figure for the Dario email.
 
-Produces figures/double_peak_dario.pdf — a single landscape page suitable
-for attaching to an email without requiring the recipient to scroll.
+Produces figures/double_peak_dario.pdf — a single landscape page.
 
-Layout: one row, one panel per double-peak unit.
-  • GRB058 units 410, 651 (session 20260312), 515 (session 20260319):
-    15 ms (blue) and 30 ms (orange) PSTHs overlaid so the reader can
-    immediately see whether the second peak shifts with pulse duration.
-  • GRB060 unit 248 (session 20260319): 15 ms only — this animal's
-    sessions contained no 30 ms stimulus blocks.
+Layout: two rows, three columns.
+  • Top row — single-peak reference examples (GRB058, 15 ms only):
+    top-3 excited single-peak units by response amplitude above baseline.
+  • Bottom row — double-peak units (GRB058 only, 15 ms + 30 ms overlaid):
+    units 410 and 651 (3/12), 515 (3/19).
 
-GRB059 (sessions 20260225 and 20260319) had no double-peak units among
-its excited units and is therefore not shown.
+Double-peak criterion: excited by Wilcoxon test, exactly two peaks detected
+by classify_peak_count (min_prominence_frac=0.25, min_distance=20 ms), AND
+both peaks ≥ 20 sp/s above pre-stimulus baseline.  This floor removes low-SNR
+cases (e.g. GRB060 unit 248, whose peaks were only 11–13 sp/s above baseline
+with the second peak larger than the first — not a typical on-response shape).
 
-GRB006 (~11/150 double-peak units in a prior recording with a different
-hardware setup) is referenced in the accompanying email text rather than
-in this figure because porting the nidq event pipeline is still pending.
+GRB059: no double-peak units detected (0/4 excited units qualify).
+GRB060: unit 248 passes the two-peak shape test but fails the 20 sp/s floor.
+Both are absent from the figure; mention in the email.
+GRB006 (~11/150 double-peak units, different recording hardware): referenced
+in the email text; the nidq event pipeline is not yet ported.
 
-Anne's guidance (2026-04-02): keep it simple — show example neurons with
-and without long pulses to demonstrate the double peak appears either way.
-The core question for Dario is whether this response shape is a known
-phenomenon in V1.
+Anne's guidance (2026-04-02): keep it simple — show examples with and without
+long pulses; describe the stimulus; ask whether this response shape is known.
 """
 
 import numpy as np
@@ -62,92 +63,42 @@ PEAK_KWARGS = dict(
     binwidth_ms=10.0,
 )
 
-# Sessions with 30 ms pulses (GRB058 only)
+# Post-hoc quality filter for double-peak classification.
+# Both peaks must exceed this height above pre-stimulus baseline (sp/s).
+MIN_PEAK_HEIGHT_ABS = 20.0
+
 GRB058_SESSIONS = ["20260312_134952", "20260319_131303"]
-
-# Sessions with only 15 ms pulses — show for prevalence
-GRB060_SESSION = "20260319_151909"
-
 OUT_PATH = "/Users/gabriel/lib/ephys/figures/double_peak_dario.pdf"
 
 
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
-def run_double_peak_pipeline(subject, session, alignment_key="first_stim_ev_15ms"):
-    """Return (rows, bin_centers) for double-peak excited units in one session.
+def _baseline_mean(peth_trials, bin_centers):
+    """Mean firing rate over (-0.04, 0.0) s window, trial-averaged."""
+    mask = (bin_centers >= -0.04) & (bin_centers < 0.0)
+    return peth_trials.mean(axis=0)[mask].mean()
 
-    Each element of rows is a dict with keys:
-      subject, session, uid, peth_15, n_tr_15
-    """
+
+def _load_session(subject, session):
+    """Return (unit_ids, spike_times, align_ev, peth_15, bin_edges, bin_centers, masks)."""
     st_per_unit = fetch_good_units(subject, session)
     align_ev = fetch_session_events(subject, session)
     unit_ids = list(st_per_unit.keys())
     spike_times = list(st_per_unit.values())
 
-    n_tr_15 = len(align_ev["first_stim_ev_15ms"])
-    print(f"\n{subject}/{session}  units={len(unit_ids)}  15ms_trials={n_tr_15}")
-
     peth_15, bin_edges, bin_centers = compute_population_peth(
         spike_times_per_unit=spike_times,
-        alignment_times=align_ev[alignment_key],
+        alignment_times=align_ev["first_stim_ev_15ms"],
         **PETH_KWARGS,
     )
     _, masks = compute_unit_selectivity(
         peth_15, bin_edges, unit_ids=unit_ids, **SELECTIVITY_KWARGS
     )
-
-    exc_idx = np.where(masks["excited"])[0]
-    exc_peth_15 = peth_15[exc_idx]
-    exc_ids = [unit_ids[i] for i in exc_idx]
-    exc_spike_times = [spike_times[i] for i in exc_idx]
-    print(f"  excited={len(exc_ids)}")
-
-    peaks_df = classify_peak_count(
-        exc_peth_15, bin_centers, unit_ids=exc_ids, **PEAK_KWARGS
-    )
-    double_ids = peaks_df.loc[peaks_df["n_peaks"] == 2, "unit"].tolist()
-    print(f"  double-peak={double_ids}")
-
-    rows = []
-    for uid in double_ids:
-        i = exc_ids.index(uid)
-        rows.append(
-            dict(
-                subject=subject,
-                session=session,
-                uid=uid,
-                peth_15=exc_peth_15[i],  # (n_trials, n_bins)
-                spike_times=exc_spike_times[i],
-                n_tr_15=n_tr_15,
-                peaks_df_row=peaks_df[peaks_df["unit"] == uid].iloc[0],
-            )
-        )
-    return rows, align_ev, bin_centers
+    return unit_ids, spike_times, align_ev, peth_15, bin_edges, bin_centers, masks
 
 
-def add_peth_30(rows, align_ev, bin_centers):
-    """Attach 30 ms PSTH data to each row dict (in-place)."""
-    spike_times_list = [r["spike_times"] for r in rows]
-    n_tr_30 = len(align_ev["first_stim_ev_30ms"])
-    if n_tr_30 == 0 or not rows:
-        for r in rows:
-            r["peth_30"] = None
-            r["n_tr_30"] = 0
-        return
-
-    peth_30_all, _, _ = compute_population_peth(
-        spike_times_per_unit=spike_times_list,
-        alignment_times=align_ev["first_stim_ev_30ms"],
-        **PETH_KWARGS,
-    )
-    for i, r in enumerate(rows):
-        r["peth_30"] = peth_30_all[i]
-        r["n_tr_30"] = n_tr_30
-
-
-def plot_psth_panel(ax, bin_centers, peth_trials, color, label):
-    """Plot mean ± SEM trace. Returns mean array."""
+def plot_trace(ax, bin_centers, peth_trials, color, label):
     mean = peth_trials.mean(axis=0)
     sem = peth_trials.std(axis=0) / np.sqrt(peth_trials.shape[0])
     ax.plot(bin_centers, mean, color=color, linewidth=1.5, label=label)
@@ -155,84 +106,197 @@ def plot_psth_panel(ax, bin_centers, peth_trials, color, label):
     return mean
 
 
-def add_peak_markers(ax, peak_row, color):
+def mark_peaks(ax, peak_row, color):
     for pt, ph in zip(peak_row["peak_times"], peak_row["peak_heights"]):
         ax.plot(pt, ph, "v", color=color, markersize=7, zorder=5)
 
 
 # ---------------------------------------------------------------------------
-# Collect data — GRB058 (has 30 ms pulses)
+# Collect double-peak units (GRB058, both sessions)
 # ---------------------------------------------------------------------------
-all_rows = []  # list of row dicts in display order
+dp_rows = []  # list of dicts
 
 for session in GRB058_SESSIONS:
-    rows, align_ev, bin_centers = run_double_peak_pipeline("GRB058", session)
-    add_peth_30(rows, align_ev, bin_centers)
-    for r in rows:
-        r["bin_centers"] = bin_centers
-    all_rows.extend(rows)
+    unit_ids, spike_times, align_ev, peth_15, bin_edges, bin_centers, masks = (
+        _load_session("GRB058", session)
+    )
+    n_tr_15 = len(align_ev["first_stim_ev_15ms"])
+    n_tr_30 = len(align_ev["first_stim_ev_30ms"])
+
+    exc_idx = np.where(masks["excited"])[0]
+    exc_peth = peth_15[exc_idx]
+    exc_ids = [unit_ids[i] for i in exc_idx]
+    exc_spike_times = [spike_times[i] for i in exc_idx]
+
+    peaks_df = classify_peak_count(
+        exc_peth, bin_centers, unit_ids=exc_ids, **PEAK_KWARGS
+    )
+    candidate_ids = peaks_df.loc[peaks_df["n_peaks"] == 2, "unit"].tolist()
+
+    # Apply minimum absolute peak height filter
+    double_ids = []
+    for uid in candidate_ids:
+        i = exc_ids.index(uid)
+        peak_row = peaks_df[peaks_df["unit"] == uid].iloc[0]
+        base = _baseline_mean(exc_peth[i], bin_centers)
+        heights_above = [h - base for h in peak_row["peak_heights"]]
+        if min(heights_above) >= MIN_PEAK_HEIGHT_ABS:
+            double_ids.append(uid)
+        else:
+            print(
+                f"  Excluded {uid}: min peak height above baseline = "
+                f"{min(heights_above):.1f} sp/s (< {MIN_PEAK_HEIGHT_ABS})"
+            )
+
+    print(
+        f"\nGRB058/{session[:8]}  15ms_trials={n_tr_15}  30ms_trials={n_tr_30}"
+        f"  double-peak={double_ids}"
+    )
+
+    if not double_ids:
+        continue
+
+    dp_idx = [exc_ids.index(uid) for uid in double_ids]
+    dp_peth_15 = exc_peth[dp_idx]
+    dp_spike_times = [exc_spike_times[i] for i in dp_idx]
+
+    peth_30_all, _, _ = compute_population_peth(
+        spike_times_per_unit=dp_spike_times,
+        alignment_times=align_ev["first_stim_ev_30ms"],
+        **PETH_KWARGS,
+    )
+
+    for j, uid in enumerate(double_ids):
+        dp_rows.append(
+            dict(
+                session=session,
+                uid=uid,
+                peth_15=dp_peth_15[j],
+                peth_30=peth_30_all[j],
+                n_tr_15=n_tr_15,
+                n_tr_30=n_tr_30,
+                peaks_df_row=peaks_df[peaks_df["unit"] == uid].iloc[0],
+                bin_centers=bin_centers,
+            )
+        )
 
 # ---------------------------------------------------------------------------
-# Collect data — GRB060 (15 ms only)
+# Collect single-peak reference examples (GRB058, best by amplitude)
+# Pick top N_PANELS single-peak excited units sorted by max firing rate.
 # ---------------------------------------------------------------------------
-rows_60, align_ev_60, bin_centers_60 = run_double_peak_pipeline(
-    "GRB060", GRB060_SESSION
+N_PANELS = len(dp_rows)  # match column count
+
+sp_candidates = []
+for session in GRB058_SESSIONS:
+    unit_ids, spike_times, align_ev, peth_15, bin_edges, bin_centers, masks = (
+        _load_session("GRB058", session)
+    )
+    n_tr_15 = len(align_ev["first_stim_ev_15ms"])
+
+    exc_idx = np.where(masks["excited"])[0]
+    exc_peth = peth_15[exc_idx]
+    exc_ids = [unit_ids[i] for i in exc_idx]
+
+    peaks_df = classify_peak_count(
+        exc_peth, bin_centers, unit_ids=exc_ids, **PEAK_KWARGS
+    )
+    single_ids = peaks_df.loc[peaks_df["n_peaks"] == 1, "unit"].tolist()
+
+    for uid in single_ids:
+        i = exc_ids.index(uid)
+        mean_psth = exc_peth[i].mean(axis=0)
+        base = _baseline_mean(exc_peth[i], bin_centers)
+        excursion = mean_psth.max() - base  # response amplitude above baseline
+        sp_candidates.append(
+            dict(
+                session=session,
+                uid=uid,
+                peth_15=exc_peth[i],
+                n_tr_15=n_tr_15,
+                peaks_df_row=peaks_df[peaks_df["unit"] == uid].iloc[0],
+                bin_centers=bin_centers,
+                excursion=excursion,
+            )
+        )
+
+sp_candidates.sort(key=lambda r: -r["excursion"])
+sp_rows = sp_candidates[:N_PANELS]
+print(
+    f"\nSingle-peak examples selected: {[(r['uid'], r['session'][:8]) for r in sp_rows]}"
 )
-for r in rows_60:
-    r["peth_30"] = None
-    r["n_tr_30"] = 0
-    r["bin_centers"] = bin_centers_60
-all_rows.extend(rows_60)
-
-if not all_rows:
-    print("No double-peak units found in any session.")
-    raise SystemExit(0)
-
-print(f"\nTotal panels: {len(all_rows)}")
 
 # ---------------------------------------------------------------------------
-# Figure — wide, single row, one panel per unit
+# Figure — 2 rows × N_PANELS columns
 # ---------------------------------------------------------------------------
-n_panels = len(all_rows)
-fig, axes = plt.subplots(1, n_panels, figsize=(3.5 * n_panels, 4), sharey=False)
-if n_panels == 1:
-    axes = [axes]
+fig, axes = plt.subplots(2, N_PANELS, figsize=(3.5 * N_PANELS, 7), sharey=False)
 
-for ax, row in zip(axes, all_rows):
+# ---- Top row: single-peak reference ----------------------------------------
+for col, row in enumerate(sp_rows):
+    ax = axes[0, col]
+    bc = row["bin_centers"]
+    plot_trace(ax, bc, row["peth_15"], "tab:gray", f"15 ms (n={row['n_tr_15']})")
+    mark_peaks(ax, row["peaks_df_row"], color="dimgray")
+    ax.axvline(0, color="gray", linestyle="--", linewidth=0.8)
+    ax.set_title(
+        f"GRB058  unit {row['uid']}\n{row['session'][:8]}  (single peak)", fontsize=8
+    )
+    ax.set_ylabel("sp/s", fontsize=8)
+    ax.tick_params(labelsize=7)
+    if col == 0:
+        ax.set_xlabel("Time from stim onset (s)", fontsize=8)
+
+# ---- Bottom row: double-peak units -----------------------------------------
+for col, row in enumerate(dp_rows):
+    ax = axes[1, col]
     bc = row["bin_centers"]
 
-    plot_psth_panel(ax, bc, row["peth_15"], "tab:blue", f"15 ms (n={row['n_tr_15']})")
-    add_peak_markers(ax, row["peaks_df_row"], color="tab:blue")
+    plot_trace(ax, bc, row["peth_15"], "tab:blue", f"15 ms (n={row['n_tr_15']})")
+    mark_peaks(ax, row["peaks_df_row"], color="tab:blue")
 
-    if row["peth_30"] is not None:
-        plot_psth_panel(
-            ax, bc, row["peth_30"], "tab:orange", f"30 ms (n={row['n_tr_30']})"
-        )
-        # Detect and mark peaks in 30 ms PSTH
-        peak_df_30 = classify_peak_count(
-            row["peth_30"][np.newaxis, :, :],
-            bc,
-            unit_ids=[row["uid"]],
-            **PEAK_KWARGS,
-        )
-        if not peak_df_30.empty:
-            add_peak_markers(ax, peak_df_30.iloc[0], color="tab:orange")
+    plot_trace(ax, bc, row["peth_30"], "tab:orange", f"30 ms (n={row['n_tr_30']})")
+    peak_df_30 = classify_peak_count(
+        row["peth_30"][np.newaxis, :, :],
+        bc,
+        unit_ids=[row["uid"]],
+        **PEAK_KWARGS,
+    )
+    if not peak_df_30.empty:
+        mark_peaks(ax, peak_df_30.iloc[0], color="tab:orange")
 
     ax.axvline(0, color="gray", linestyle="--", linewidth=0.8)
     ax.legend(fontsize=7, frameon=False, loc="upper right")
-
-    sess_short = row["session"][:8]  # e.g. 20260312
-    has_30 = row["peth_30"] is not None
-    title = f"{row['subject']}  unit {row['uid']}\n{sess_short}"
-    if not has_30:
-        title += "  (15 ms only)"
-    ax.set_title(title, fontsize=8)
-    ax.set_xlabel("Time from stim onset (s)", fontsize=8)
+    ax.set_title(
+        f"GRB058  unit {row['uid']}\n{row['session'][:8]}  (double peak)", fontsize=8
+    )
     ax.set_ylabel("sp/s", fontsize=8)
+    ax.set_xlabel("Time from stim onset (s)", fontsize=8)
     ax.tick_params(labelsize=7)
 
+# Row labels on the left margin
+axes[0, 0].annotate(
+    "Single-peak\nexamples",
+    xy=(-0.22, 0.5),
+    xycoords="axes fraction",
+    fontsize=8,
+    ha="right",
+    va="center",
+    rotation=90,
+    fontweight="bold",
+)
+axes[1, 0].annotate(
+    "Double-peak\nunits",
+    xy=(-0.22, 0.5),
+    xycoords="axes fraction",
+    fontsize=8,
+    ha="right",
+    va="center",
+    rotation=90,
+    fontweight="bold",
+)
+
 fig.suptitle(
-    "Double-peaked V1 responses to LED flashes  —  15 ms vs 30 ms pulse width",
+    "Double-peaked V1 responses to LED flashes  —  15 ms vs 30 ms pulse width\n"
+    "Triangles mark detected peaks  ▼",
     fontsize=10,
     y=1.02,
 )

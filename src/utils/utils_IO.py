@@ -89,13 +89,13 @@ def fetch_session_events(
     events = pd.DataFrame(events.fetch_synced())
 
     align_ev: dict[str, np.ndarray] = {
-        "stim": events.query("event_name == '0'").event_timestamps.values[0],
-        "trial_start": events.query("event_name == '2'").event_timestamps.values[0],
-        "frames": events.query("event_name == '3'").event_timestamps.values[0],
-        "left_port": events.query("event_name == '4'").event_timestamps.values[0],
-        "center_port": events.query("event_name == '5'").event_timestamps.values[0],
+        "stim": events.query("event_name == 'io0'").event_timestamps.values[0],
+        "trial_start": events.query("event_name == 'io2'").event_timestamps.values[0],
+        "frames": events.query("event_name == 'io3'").event_timestamps.values[0],
+        "left_port": events.query("event_name == 'io4'").event_timestamps.values[0],
+        "center_port": events.query("event_name == 'io5'").event_timestamps.values[0],
         "right_port": events.query(
-            "event_name == '6' & stream_name == 'obx'"
+            "event_name == 'io6' & stream_name == 'obx'"
         ).event_timestamps.values[0],
     }
 

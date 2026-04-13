@@ -332,19 +332,21 @@ def build_trial_stim_classification(
     import numpy as np
     import pandas as pd
 
-    obx_trial_starts = align_ev["trial_start"]
     stim_times = np.asarray(align_ev["stim_ev_15ms"])
     cp_entries = np.asarray(align_ev["center_port"])
     left_entries = np.asarray(align_ev["left_port"])
     right_entries = np.asarray(align_ev["right_port"])
+    obx_trial_starts = np.asarray(align_ev["trial_start"])
 
-    # Build bpod→OBX clock mapping from paired sync events.
-    # t_sync (bpod) and obx_trial_starts are the same physical TTL pulse.
+    # Clock mapping: t_sync (bpod) ↔ trial_start (OBX) are the same physical
+    # TTL, 1-to-1 with Chipmunk trials (io2 rising-edge only, already filtered
+    # in fetch_session_events).  Use these pairs to interpolate t_react
+    # (bpod clock) into OBX time.
     n = min(len(trial_df), len(obx_trial_starts))
     bpod_sync = trial_df["t_sync"].iloc[:n].to_numpy(dtype=float)
     obx_sync = obx_trial_starts[:n].astype(float)
 
-    # Drop any trials where t_sync is NaN (shouldn't happen, but guard anyway)
+    # Drop any rows where t_sync is NaN
     valid = np.isfinite(bpod_sync) & np.isfinite(obx_sync)
     bpod_sync = bpod_sync[valid]
     obx_sync = obx_sync[valid]

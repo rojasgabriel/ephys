@@ -2,11 +2,14 @@
 
 ## Next up
 
-**Double-peak PSTH split for Dario email (side thread, not SfN).**
-- Status: infrastructure merged in PR #7 (strict 15/30 ms classification in `fetch_session_events()`); the analysis itself is not written yet.
-- Plan: add a section to `notebooks/selectivity.ipynb` that (1) recomputes the PSTH twice, aligned to `align_ev["first_stim_ev_15ms"]` and `align_ev["first_stim_ev_30ms"]`; (2) runs `classify_peak_count` on the 15 ms PSTH to auto-pick 2-peak units; (3) plots those units' 15 ms vs 30 ms PSTHs side-by-side. Freeze into `scripts/double_peak_pulse_split.py` once the figure is right.
-- Open question: which session to use — `GRB058 / 20260224_152424` (what `selectivity.ipynb` currently runs on) or `GRB058 / 20260312_134952` (what the pulse-width prototype was validated on). Check which sessions actually contain 30 ms pulses before deciding.
-- Scientific confounds to acknowledge in the figure caption / email: (1) 30 ms delivers ~2× photons at same LED intensity — luminance vs pulse-width confound; (2) sample imbalance (prototype counts were 1757 vs 88 on GRB058); (3) interleaved vs blocked presentation; (4) first-pulse vs all-pulse alignment choice; (5) example units only, not population stats (per Anne's simplified brief).
+**Double-peak PSTH figure for Dario email — DONE (draft).**
+- Output: `figures/double_peak_dario.pdf` (2 pages).
+  - Page 1 (Prevalence): GRB006 unit 77 archived screenshot + GRB058 units 410, 651 (3/12), 515 (3/19), 15 ms PSTHs with peak markers.
+  - Page 2 (Offset hypothesis): GRB058 units 410/651/515, 15 ms (blue) vs 30 ms (orange) overlaid on same axes, peak markers on both conditions.
+- Script: `scripts/double_peak_pulse_split.py`
+- GRB006 archived figures stored in `figures/GRB006/` (unit 77 PETHs, rasters, spike duration histogram, copied from Marsa's Dec 2025 email).
+- Remaining: draft and send the Dario email (user task).
+- Confounds to note in email: (1) 30 ms = ~2× photons at same LED intensity (luminance vs width confound); (2) small 30 ms sample (30–34 first-of-train events); (3) first-pulse-only alignment; (4) example units, not population stats.
 
 ## Analysis TODOs
 

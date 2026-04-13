@@ -173,7 +173,9 @@ def fetch_trial_metadata(
 
         trial_data = (
             (Chipmunk() & sess_dicts)
-            * Chipmunk.Trial().proj("response", "rewarded")
+            * Chipmunk.Trial().proj(
+                "response", "rewarded", "t_start", "t_sync", "t_react"
+            )
             * Chipmunk.TrialParameters().proj("stim_rate_vision", "category_boundary")
         ).fetch(format="frame")
         tdf: pd.DataFrame = trial_data.reset_index(

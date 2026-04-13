@@ -305,6 +305,106 @@ def classify_peak_count_sweep(
     return pd.DataFrame(rows)
 
 
+def build_trial_stim_classification(
+    align_ev: dict,
+    trial_df,
+) -> "pd.DataFrame":
+    """Classify each 15 ms stim pulse as stationary or movement for every trial.
+
+    Uses the bpod→OBX clock mapping derived from paired t_sync (bpod) and
+    trial_start (OBX io2) timestamps to convert t_react (center port exit,
+    bpod clock) into OBX time.  Stim pulses that fall between center port
+    entry and center port exit are labelled stationary; pulses between center
+    port exit and response port entry are labelled movement.
+
+    Args:
+        align_ev: dict returned by fetch_session_events.  Must contain
+            'trial_start', 'center_port', 'left_port', 'right_port',
+            and 'stim_ev_15ms'.
+        trial_df: DataFrame returned by fetch_trial_metadata.  Must contain
+            't_sync', 't_react', and 'response' columns.
+
+    Returns:
+        DataFrame with one row per trial that has both stationary and movement
+        stims.  Columns: trial_idx, cp_entry, cp_exit_obx, rp_entry,
+        stationary_stims (list), movement_stims (list).
+    """
+    import numpy as np
+    import pandas as pd
+
+    obx_trial_starts = align_ev["trial_start"]
+    stim_times = np.asarray(align_ev["stim_ev_15ms"])
+    cp_entries = np.asarray(align_ev["center_port"])
+    left_entries = np.asarray(align_ev["left_port"])
+    right_entries = np.asarray(align_ev["right_port"])
+
+    # Build bpod→OBX clock mapping from paired sync events.
+    # t_sync (bpod) and obx_trial_starts are the same physical TTL pulse.
+    n = min(len(trial_df), len(obx_trial_starts))
+    bpod_sync = trial_df["t_sync"].iloc[:n].to_numpy(dtype=float)
+    obx_sync = obx_trial_starts[:n].astype(float)
+
+    # Drop any trials where t_sync is NaN (shouldn't happen, but guard anyway)
+    valid = np.isfinite(bpod_sync) & np.isfinite(obx_sync)
+    bpod_sync = bpod_sync[valid]
+    obx_sync = obx_sync[valid]
+
+    t_react = trial_df["t_react"].iloc[:n].to_numpy(dtype=float)
+    response = trial_df["response"].iloc[:n].to_numpy()
+
+    # Convert t_react from bpod clock to OBX clock via linear interpolation
+    cp_exit_obx = np.interp(t_react, bpod_sync, obx_sync)
+
+    rows = []
+    for i in range(n):
+        if not np.isfinite(t_react[i]):
+            # Early withdrawal or no-choice trial — no movement epoch
+            continue
+
+        trial_start = obx_trial_starts[i]
+        trial_end = obx_trial_starts[i + 1] if i + 1 < len(obx_trial_starts) else np.inf
+
+        # Center port entry: first cp event after trial start within this trial
+        cp_mask = (cp_entries > trial_start) & (cp_entries < trial_end)
+        if not cp_mask.any():
+            continue
+        cp_entry = cp_entries[cp_mask][0]
+
+        cp_exit = cp_exit_obx[i]
+
+        # Response port entry: first matching port event after cp_exit
+        if response[i] == 1:
+            rp_pool = right_entries
+        elif response[i] == -1:
+            rp_pool = left_entries
+        else:
+            continue  # no response — skip
+        rp_mask = (rp_pool > cp_exit) & (rp_pool < trial_end)
+        if not rp_mask.any():
+            continue
+        rp_entry = rp_pool[rp_mask][0]
+
+        # Classify stims within this trial
+        stat = stim_times[(stim_times >= cp_entry) & (stim_times < cp_exit)].tolist()
+        move = stim_times[(stim_times >= cp_exit) & (stim_times <= rp_entry)].tolist()
+
+        if not stat or not move:
+            continue
+
+        rows.append(
+            dict(
+                trial_idx=i,
+                cp_entry=cp_entry,
+                cp_exit_obx=cp_exit,
+                rp_entry=rp_entry,
+                stationary_stims=stat,
+                movement_stims=move,
+            )
+        )
+
+    return pd.DataFrame(rows)
+
+
 def calculate_stim_offsets(trial_ts, trial_start_col="center_port_entries"):
     """
     Calculates the offset of each stationary and movement stimulus relative

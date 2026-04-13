@@ -179,7 +179,13 @@ def fetch_trial_metadata(
         trial_data = (
             (Chipmunk() & sess_dicts)
             * Chipmunk.Trial().proj(
-                "response", "rewarded", "t_start", "t_sync", "t_react"
+                "response",
+                "rewarded",
+                "t_start",
+                "t_sync",
+                "t_stim",
+                "t_react",
+                "stim_duration",
             )
             * Chipmunk.TrialParameters().proj("stim_rate_vision", "category_boundary")
         ).fetch(format="frame")

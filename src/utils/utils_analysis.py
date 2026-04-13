@@ -317,6 +317,11 @@ def build_trial_stim_classification(
     entry and center port exit are labelled stationary; pulses between center
     port exit and response port entry are labelled movement.
 
+    Reentrances: when an animal pokes center port, leaves, and re-enters
+    before the final exit (t_react), the "stable" fixation period is the
+    interval between the LAST center port entry before t_react and t_react
+    itself.  Earlier brief pokes are excluded from the stationary window.
+
     Args:
         align_ev: dict returned by fetch_session_events.  Must contain
             'trial_start', 'center_port', 'left_port', 'right_port',
@@ -327,7 +332,9 @@ def build_trial_stim_classification(
     Returns:
         DataFrame with one row per trial that has both stationary and movement
         stims.  Columns: trial_idx, cp_entry, cp_exit_obx, rp_entry,
-        stationary_stims (list), movement_stims (list).
+        stationary_stims (list), movement_stims (list), n_cp_entries
+        (count of center port entries in this trial — > 1 indicates a
+        reentrance was collapsed).
     """
     import numpy as np
     import pandas as pd
@@ -366,13 +373,19 @@ def build_trial_stim_classification(
         trial_start = obx_trial_starts[i]
         trial_end = obx_trial_starts[i + 1] if i + 1 < len(obx_trial_starts) else np.inf
 
-        # Center port entry: first cp event after trial start within this trial
-        cp_mask = (cp_entries > trial_start) & (cp_entries < trial_end)
+        cp_exit = cp_exit_obx[i]
+
+        # Center port entry: LAST cp event before cp_exit within this trial.
+        # Using the last entry handles reentrances (animal briefly leaves
+        # and re-enters before the final exit at t_react).
+        cp_mask = (
+            (cp_entries > trial_start)
+            & (cp_entries < cp_exit)
+            & (cp_entries < trial_end)
+        )
         if not cp_mask.any():
             continue
-        cp_entry = cp_entries[cp_mask][0]
-
-        cp_exit = cp_exit_obx[i]
+        cp_entry = cp_entries[cp_mask][-1]
 
         # Response port entry: first matching port event after cp_exit
         if response[i] == 1:
@@ -401,6 +414,7 @@ def build_trial_stim_classification(
                 rp_entry=rp_entry,
                 stationary_stims=stat,
                 movement_stims=move,
+                n_cp_entries=int(cp_mask.sum()),
             )
         )
 

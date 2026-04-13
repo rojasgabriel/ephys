@@ -1,23 +1,26 @@
 """Double-peak PSTH figure for the Dario email.
 
-Two pages saved to figures/double_peak_dario.pdf:
+Produces figures/double_peak_dario.pdf — a single landscape page suitable
+for attaching to an email without requiring the recipient to scroll.
 
-  Page 1 — Prevalence
-    Shows that double-peak units exist across mice.  One row per
-    double-peak unit:
-      • GRB006 unit 77: embedded from a cached PSTH screenshot
-        (nidq pipeline not yet supported in code).
-      • GRB058 units from sessions 20260312_134952 and 20260319_131303:
-        computed 15 ms PSTHs with detected-peak markers (▼).
+Layout: one row, one panel per double-peak unit.
+  • GRB058 units 410, 651 (session 20260312), 515 (session 20260319):
+    15 ms (blue) and 30 ms (orange) PSTHs overlaid so the reader can
+    immediately see whether the second peak shifts with pulse duration.
+  • GRB060 unit 248 (session 20260319): 15 ms only — this animal's
+    sessions contained no 30 ms stimulus blocks.
 
-  Page 2 — Offset hypothesis
-    For GRB058 double-peak units only: 15 ms (blue) and 30 ms (orange)
-    PSTHs overlaid on the same axes.  Peak markers (▼) are drawn for
-    both conditions so timing differences are visually explicit.
+GRB059 (sessions 20260225 and 20260319) had no double-peak units among
+its excited units and is therefore not shown.
 
-Sessions used:
-  • 20260312_134952  ~25 % of 4 Hz trials had 30 ms pulses
-  • 20260319_131303  ~50 % of 4 Hz trials had 30 ms pulses
+GRB006 (~11/150 double-peak units in a prior recording with a different
+hardware setup) is referenced in the accompanying email text rather than
+in this figure because porting the nidq event pipeline is still pending.
+
+Anne's guidance (2026-04-02): keep it simple — show example neurons with
+and without long pulses to demonstrate the double peak appears either way.
+The core question for Dario is whether this response shape is a known
+phenomenon in V1.
 """
 
 import numpy as np
@@ -37,9 +40,6 @@ from ephys.src.utils.utils_analysis import (
 # ---------------------------------------------------------------------------
 # Parameters
 # ---------------------------------------------------------------------------
-SUBJECT = "GRB058"
-SESSIONS = ["20260312_134952", "20260319_131303"]
-
 PETH_KWARGS = dict(
     pre_seconds=0.1,
     post_seconds=0.15,
@@ -62,35 +62,37 @@ PEAK_KWARGS = dict(
     binwidth_ms=10.0,
 )
 
-GRB006_IMAGE = "/Users/gabriel/lib/ephys/figures/GRB006/unit77_peth_first_stim.png"
+# Sessions with 30 ms pulses (GRB058 only)
+GRB058_SESSIONS = ["20260312_134952", "20260319_131303"]
+
+# Sessions with only 15 ms pulses — show for prevalence
+GRB060_SESSION = "20260319_151909"
+
 OUT_PATH = "/Users/gabriel/lib/ephys/figures/double_peak_dario.pdf"
 
-# ---------------------------------------------------------------------------
-# Compute GRB058 double-peak units
-# ---------------------------------------------------------------------------
-# rows: list of (session, uid, peth_15_row, peth_30_row, peaks_df_row,
-#                n_tr_15, n_tr_30, bin_centers)
-rows = []
 
-for session in SESSIONS:
-    st_per_unit = fetch_good_units(SUBJECT, session)
-    align_ev = fetch_session_events(SUBJECT, session)
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+def run_double_peak_pipeline(subject, session, alignment_key="first_stim_ev_15ms"):
+    """Return (rows, bin_centers) for double-peak excited units in one session.
+
+    Each element of rows is a dict with keys:
+      subject, session, uid, peth_15, n_tr_15
+    """
+    st_per_unit = fetch_good_units(subject, session)
+    align_ev = fetch_session_events(subject, session)
     unit_ids = list(st_per_unit.keys())
     spike_times = list(st_per_unit.values())
 
     n_tr_15 = len(align_ev["first_stim_ev_15ms"])
-    n_tr_30 = len(align_ev["first_stim_ev_30ms"])
-    print(f"\n{SUBJECT} / {session}")
-    print(
-        f"  Units: {len(unit_ids)},  15 ms trials: {n_tr_15},  30 ms trials: {n_tr_30}"
-    )
+    print(f"\n{subject}/{session}  units={len(unit_ids)}  15ms_trials={n_tr_15}")
 
     peth_15, bin_edges, bin_centers = compute_population_peth(
         spike_times_per_unit=spike_times,
-        alignment_times=align_ev["first_stim_ev_15ms"],
+        alignment_times=align_ev[alignment_key],
         **PETH_KWARGS,
     )
-
     _, masks = compute_unit_selectivity(
         peth_15, bin_edges, unit_ids=unit_ids, **SELECTIVITY_KWARGS
     )
@@ -99,55 +101,53 @@ for session in SESSIONS:
     exc_peth_15 = peth_15[exc_idx]
     exc_ids = [unit_ids[i] for i in exc_idx]
     exc_spike_times = [spike_times[i] for i in exc_idx]
-    print(f"  Excited: {len(exc_ids)}")
+    print(f"  excited={len(exc_ids)}")
 
     peaks_df = classify_peak_count(
         exc_peth_15, bin_centers, unit_ids=exc_ids, **PEAK_KWARGS
     )
     double_ids = peaks_df.loc[peaks_df["n_peaks"] == 2, "unit"].tolist()
-    print(f"  Double-peak: {double_ids}")
+    print(f"  double-peak={double_ids}")
 
-    if not double_ids:
-        continue
+    rows = []
+    for uid in double_ids:
+        i = exc_ids.index(uid)
+        rows.append(
+            dict(
+                subject=subject,
+                session=session,
+                uid=uid,
+                peth_15=exc_peth_15[i],  # (n_trials, n_bins)
+                spike_times=exc_spike_times[i],
+                n_tr_15=n_tr_15,
+                peaks_df_row=peaks_df[peaks_df["unit"] == uid].iloc[0],
+            )
+        )
+    return rows, align_ev, bin_centers
 
-    dp_idx = [exc_ids.index(uid) for uid in double_ids]
-    dp_peth_15 = exc_peth_15[dp_idx]
-    dp_spike_times = [exc_spike_times[i] for i in dp_idx]
 
-    dp_peth_30, _, _ = compute_population_peth(
-        spike_times_per_unit=dp_spike_times,
+def add_peth_30(rows, align_ev, bin_centers):
+    """Attach 30 ms PSTH data to each row dict (in-place)."""
+    spike_times_list = [r["spike_times"] for r in rows]
+    n_tr_30 = len(align_ev["first_stim_ev_30ms"])
+    if n_tr_30 == 0 or not rows:
+        for r in rows:
+            r["peth_30"] = None
+            r["n_tr_30"] = 0
+        return
+
+    peth_30_all, _, _ = compute_population_peth(
+        spike_times_per_unit=spike_times_list,
         alignment_times=align_ev["first_stim_ev_30ms"],
         **PETH_KWARGS,
     )
-
-    for i, uid in enumerate(double_ids):
-        peak_row = peaks_df[peaks_df["unit"] == uid].iloc[0]
-        rows.append(
-            (
-                session,
-                uid,
-                dp_peth_15[i],
-                dp_peth_30[i],
-                peak_row,
-                n_tr_15,
-                n_tr_30,
-                bin_centers,
-            )
-        )
-
-if not rows:
-    print("No double-peak units found in any session.")
-    raise SystemExit(0)
-
-print(f"\nTotal double-peak units found: {len(rows)}")
-
-# ---------------------------------------------------------------------------
-# Helper: draw a single PSTH trace + SEM shading on ax
-# ---------------------------------------------------------------------------
+    for i, r in enumerate(rows):
+        r["peth_30"] = peth_30_all[i]
+        r["n_tr_30"] = n_tr_30
 
 
-def _plot_trace(ax, bin_centers, peth_trials, color, label):
-    """peth_trials: (n_trials, n_bins) array."""
+def plot_psth_panel(ax, bin_centers, peth_trials, color, label):
+    """Plot mean ± SEM trace. Returns mean array."""
     mean = peth_trials.mean(axis=0)
     sem = peth_trials.std(axis=0) / np.sqrt(peth_trials.shape[0])
     ax.plot(bin_centers, mean, color=color, linewidth=1.5, label=label)
@@ -155,126 +155,90 @@ def _plot_trace(ax, bin_centers, peth_trials, color, label):
     return mean
 
 
-def _add_peaks(ax, peak_row, bin_centers, color="crimson"):
+def add_peak_markers(ax, peak_row, color):
     for pt, ph in zip(peak_row["peak_times"], peak_row["peak_heights"]):
-        ax.plot(pt, ph, "v", color=color, markersize=8, zorder=5)
+        ax.plot(pt, ph, "v", color=color, markersize=7, zorder=5)
 
 
 # ---------------------------------------------------------------------------
-# Page 1 — Prevalence
+# Collect data — GRB058 (has 30 ms pulses)
 # ---------------------------------------------------------------------------
-# GRB006 unit 77 is one extra row at the top (image panel).
-n_grb058_rows = len(rows)
-n_total_rows = 1 + n_grb058_rows  # GRB006 + GRB058 units
+all_rows = []  # list of row dicts in display order
 
-fig1, axes1 = plt.subplots(
-    n_total_rows,
-    1,
-    figsize=(5, 3 * n_total_rows),
-    squeeze=False,
+for session in GRB058_SESSIONS:
+    rows, align_ev, bin_centers = run_double_peak_pipeline("GRB058", session)
+    add_peth_30(rows, align_ev, bin_centers)
+    for r in rows:
+        r["bin_centers"] = bin_centers
+    all_rows.extend(rows)
+
+# ---------------------------------------------------------------------------
+# Collect data — GRB060 (15 ms only)
+# ---------------------------------------------------------------------------
+rows_60, align_ev_60, bin_centers_60 = run_double_peak_pipeline(
+    "GRB060", GRB060_SESSION
 )
+for r in rows_60:
+    r["peth_30"] = None
+    r["n_tr_30"] = 0
+    r["bin_centers"] = bin_centers_60
+all_rows.extend(rows_60)
 
-# -- GRB006 unit 77 (embedded screenshot) --
-ax_img = axes1[0, 0]
-img = plt.imread(GRB006_IMAGE)
-ax_img.imshow(img)
-ax_img.axis("off")
-ax_img.set_title("GRB006  unit 77  —  15 ms  (archived figure)", fontsize=9)
-ax_img.text(
-    -0.05,
-    0.5,
-    "GRB006",
-    transform=ax_img.transAxes,
-    va="center",
-    ha="right",
-    fontsize=8,
-    rotation=90,
-)
+if not all_rows:
+    print("No double-peak units found in any session.")
+    raise SystemExit(0)
 
-# -- GRB058 units --
-for i, (session, uid, p15, p30, peak_row, n_tr_15, n_tr_30, bin_centers) in enumerate(
-    rows
-):
-    ax = axes1[1 + i, 0]
-    mean15 = _plot_trace(ax, bin_centers, p15, "tab:blue", f"15 ms (n={n_tr_15})")
+print(f"\nTotal panels: {len(all_rows)}")
+
+# ---------------------------------------------------------------------------
+# Figure — wide, single row, one panel per unit
+# ---------------------------------------------------------------------------
+n_panels = len(all_rows)
+fig, axes = plt.subplots(1, n_panels, figsize=(3.5 * n_panels, 4), sharey=False)
+if n_panels == 1:
+    axes = [axes]
+
+for ax, row in zip(axes, all_rows):
+    bc = row["bin_centers"]
+
+    plot_psth_panel(ax, bc, row["peth_15"], "tab:blue", f"15 ms (n={row['n_tr_15']})")
+    add_peak_markers(ax, row["peaks_df_row"], color="tab:blue")
+
+    if row["peth_30"] is not None:
+        plot_psth_panel(
+            ax, bc, row["peth_30"], "tab:orange", f"30 ms (n={row['n_tr_30']})"
+        )
+        # Detect and mark peaks in 30 ms PSTH
+        peak_df_30 = classify_peak_count(
+            row["peth_30"][np.newaxis, :, :],
+            bc,
+            unit_ids=[row["uid"]],
+            **PEAK_KWARGS,
+        )
+        if not peak_df_30.empty:
+            add_peak_markers(ax, peak_df_30.iloc[0], color="tab:orange")
+
     ax.axvline(0, color="gray", linestyle="--", linewidth=0.8)
-    _add_peaks(ax, peak_row, bin_centers, color="crimson")
-    ax.set_title(f"GRB058  unit {uid}  —  15 ms  (n={n_tr_15})", fontsize=9)
-    ax.set_xlabel("Time (s)")
+    ax.legend(fontsize=7, frameon=False, loc="upper right")
+
+    sess_short = row["session"][:8]  # e.g. 20260312
+    has_30 = row["peth_30"] is not None
+    title = f"{row['subject']}  unit {row['uid']}\n{sess_short}"
+    if not has_30:
+        title += "  (15 ms only)"
+    ax.set_title(title, fontsize=8)
+    ax.set_xlabel("Time from stim onset (s)", fontsize=8)
     ax.set_ylabel("sp/s", fontsize=8)
-    ax.text(
-        -0.12,
-        0.5,
-        session.replace("_", " "),
-        transform=ax.transAxes,
-        va="center",
-        ha="right",
-        fontsize=7,
-        rotation=90,
-    )
+    ax.tick_params(labelsize=7)
 
-fig1.suptitle("Double-peak units across mice", fontsize=11, y=1.01)
-fig1.tight_layout()
-
-# ---------------------------------------------------------------------------
-# Page 2 — Offset hypothesis
-# ---------------------------------------------------------------------------
-fig2, axes2 = plt.subplots(
-    n_grb058_rows,
-    1,
-    figsize=(5, 3 * n_grb058_rows),
-    squeeze=False,
+fig.suptitle(
+    "Double-peaked V1 responses to LED flashes  —  15 ms vs 30 ms pulse width",
+    fontsize=10,
+    y=1.02,
 )
+fig.tight_layout()
 
-for i, (session, uid, p15, p30, peak_row, n_tr_15, n_tr_30, bin_centers) in enumerate(
-    rows
-):
-    ax = axes2[i, 0]
-
-    _plot_trace(ax, bin_centers, p15, "tab:blue", f"15 ms (n={n_tr_15})")
-    _plot_trace(ax, bin_centers, p30, "tab:orange", f"30 ms (n={n_tr_30})")
-    ax.axvline(0, color="gray", linestyle="--", linewidth=0.8)
-
-    # Peak markers: 15 ms in blue, 30 ms in orange
-    _add_peaks(ax, peak_row, bin_centers, color="tab:blue")
-
-    # Detect peaks in 30ms PSTH for the timing comparison
-    peak_df_30 = classify_peak_count(
-        p30[np.newaxis, :, :],  # (1, n_trials, n_bins)
-        bin_centers,
-        unit_ids=[uid],
-        **PEAK_KWARGS,
-    )
-    if not peak_df_30.empty:
-        pr30 = peak_df_30.iloc[0]
-        for pt, ph in zip(pr30["peak_times"], pr30["peak_heights"]):
-            ax.plot(pt, ph, "v", color="tab:orange", markersize=8, zorder=5)
-
-    ax.legend(fontsize=8, frameon=False)
-    ax.set_title(f"GRB058  unit {uid}  —  15 ms vs 30 ms", fontsize=9)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("sp/s", fontsize=8)
-    ax.text(
-        -0.12,
-        0.5,
-        session.replace("_", " "),
-        transform=ax.transAxes,
-        va="center",
-        ha="right",
-        fontsize=7,
-        rotation=90,
-    )
-
-fig2.suptitle(
-    "Offset hypothesis: do 30 ms pulses shift the second peak?", fontsize=10, y=1.01
-)
-fig2.tight_layout()
-
-# ---------------------------------------------------------------------------
-# Save both pages to one PDF
-# ---------------------------------------------------------------------------
 with PdfPages(OUT_PATH) as pdf:
-    pdf.savefig(fig1, bbox_inches="tight")
-    pdf.savefig(fig2, bbox_inches="tight")
+    pdf.savefig(fig, bbox_inches="tight")
 
 print(f"\nFigure saved: {OUT_PATH}")

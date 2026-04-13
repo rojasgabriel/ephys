@@ -3,13 +3,15 @@
 ## Next up
 
 **Double-peak PSTH figure for Dario email — DONE (draft).**
-- Output: `figures/double_peak_dario.pdf` (2 pages).
-  - Page 1 (Prevalence): GRB006 unit 77 archived screenshot + GRB058 units 410, 651 (3/12), 515 (3/19), 15 ms PSTHs with peak markers.
-  - Page 2 (Offset hypothesis): GRB058 units 410/651/515, 15 ms (blue) vs 30 ms (orange) overlaid on same axes, peak markers on both conditions.
+- Output: `figures/double_peak_dario.pdf` — single landscape page, 4 panels side-by-side.
+  - GRB058 unit 410 (3/12), unit 651 (3/12), unit 515 (3/19): 15 ms (blue) + 30 ms (orange) overlaid.
+  - GRB060 unit 248 (3/19): 15 ms only (no 30 ms sessions for this animal).
+  - GRB059: no double-peak units detected — absent from figure, mention in email.
+  - GRB006 (~11/150 double-peak units): referenced in email text; nidq pipeline not yet ported.
 - Script: `scripts/double_peak_pulse_split.py`
 - GRB006 archived figures stored in `figures/GRB006/` (unit 77 PETHs, rasters, spike duration histogram, copied from Marsa's Dec 2025 email).
-- Remaining: draft and send the Dario email (user task).
-- Confounds to note in email: (1) 30 ms = ~2× photons at same LED intensity (luminance vs width confound); (2) small 30 ms sample (30–34 first-of-train events); (3) first-pulse-only alignment; (4) example units, not population stats.
+- Remaining: draft and send the Dario email (CC Anne). Anne's guidance (Apr 2): keep simple — just show examples, describe stimulus. Core question: is a double-peaked on-response to large flashes a known V1 phenomenon?
+- Confounds to note in email: (1) 30 ms = ~2× photons at same LED intensity; (2) small 30 ms sample (30–34 first-of-train events); (3) first-pulse-only alignment.
 
 ## Analysis TODOs
 

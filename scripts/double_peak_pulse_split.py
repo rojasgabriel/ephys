@@ -3,8 +3,9 @@
 Produces figures/double_peak_dario.pdf — a single landscape page.
 
 Layout: two rows, three columns.
-  • Top row — single-peak reference examples (GRB058, 15 ms only):
-    top-3 excited single-peak units by response amplitude above baseline.
+  • Top row — single-peak reference examples (one per animal, 15 ms only):
+    best single-peak excited unit from each of GRB058, GRB059, GRB060,
+    chosen by largest response amplitude above baseline.
   • Bottom row — double-peak units (GRB058 only, 15 ms + 30 ms overlaid):
     units 410 and 651 (3/12), 515 (3/19).
 
@@ -181,15 +182,20 @@ for session in GRB058_SESSIONS:
         )
 
 # ---------------------------------------------------------------------------
-# Collect single-peak reference examples (GRB058, best by amplitude)
-# Pick top N_PANELS single-peak excited units sorted by max firing rate.
+# Collect single-peak reference examples — one per animal (GRB058/059/060),
+# best single-peak excited unit chosen by response amplitude above baseline.
+# Using one per animal ensures all recorded subjects appear in the figure.
 # ---------------------------------------------------------------------------
-N_PANELS = len(dp_rows)  # match column count
+SP_ANIMAL_SESSIONS = [
+    ("GRB058", "20260312_134952"),
+    ("GRB059", "20260319_142123"),
+    ("GRB060", "20260319_151909"),
+]
 
-sp_candidates = []
-for session in GRB058_SESSIONS:
+sp_rows = []
+for subject, session in SP_ANIMAL_SESSIONS:
     unit_ids, spike_times, align_ev, peth_15, bin_edges, bin_centers, masks = (
-        _load_session("GRB058", session)
+        _load_session(subject, session)
     )
     n_tr_15 = len(align_ev["first_stim_ev_15ms"])
 
@@ -202,33 +208,50 @@ for session in GRB058_SESSIONS:
     )
     single_ids = peaks_df.loc[peaks_df["n_peaks"] == 1, "unit"].tolist()
 
-    for uid in single_ids:
-        i = exc_ids.index(uid)
-        mean_psth = exc_peth[i].mean(axis=0)
-        base = _baseline_mean(exc_peth[i], bin_centers)
-        excursion = mean_psth.max() - base  # response amplitude above baseline
-        sp_candidates.append(
-            dict(
-                session=session,
-                uid=uid,
-                peth_15=exc_peth[i],
-                n_tr_15=n_tr_15,
-                peaks_df_row=peaks_df[peaks_df["unit"] == uid].iloc[0],
-                bin_centers=bin_centers,
-                excursion=excursion,
-            )
+    # Stability check: exclude units that grow a second peak when the
+    # prominence threshold is relaxed to 10 %.  Those units have a
+    # borderline secondary bump and would be misleading as "single-peak"
+    # reference examples.
+    sensitive_peaks = classify_peak_count(
+        exc_peth,
+        bin_centers,
+        unit_ids=exc_ids,
+        **{**PEAK_KWARGS, "min_prominence_frac": 0.10},
+    )
+    robust_single_ids = [
+        uid
+        for uid in single_ids
+        if sensitive_peaks.loc[sensitive_peaks["unit"] == uid, "n_peaks"].iloc[0] == 1
+    ]
+    if not robust_single_ids:
+        robust_single_ids = single_ids  # fallback if all have secondary bumps
+
+    best = max(
+        robust_single_ids,
+        key=lambda uid: (
+            exc_peth[exc_ids.index(uid)].mean(0).max()
+            - _baseline_mean(exc_peth[exc_ids.index(uid)], bin_centers)
+        ),
+    )
+    i = exc_ids.index(best)
+    sp_rows.append(
+        dict(
+            subject=subject,
+            session=session,
+            uid=best,
+            peth_15=exc_peth[i],
+            n_tr_15=n_tr_15,
+            peaks_df_row=peaks_df[peaks_df["unit"] == best].iloc[0],
+            bin_centers=bin_centers,
         )
-
-sp_candidates.sort(key=lambda r: -r["excursion"])
-sp_rows = sp_candidates[:N_PANELS]
-print(
-    f"\nSingle-peak examples selected: {[(r['uid'], r['session'][:8]) for r in sp_rows]}"
-)
+    )
+    print(f"\nSingle-peak reference  {subject}/{session[:8]}  unit={best}")
 
 # ---------------------------------------------------------------------------
-# Figure — 2 rows × N_PANELS columns
+# Figure — 2 rows × 3 columns
 # ---------------------------------------------------------------------------
-fig, axes = plt.subplots(2, N_PANELS, figsize=(3.5 * N_PANELS, 7), sharey=False)
+assert len(sp_rows) == len(dp_rows) == 3, "Expected 3 panels per row"
+fig, axes = plt.subplots(2, 3, figsize=(10.5, 7), sharey=False)
 
 # ---- Top row: single-peak reference ----------------------------------------
 for col, row in enumerate(sp_rows):
@@ -238,7 +261,8 @@ for col, row in enumerate(sp_rows):
     mark_peaks(ax, row["peaks_df_row"], color="dimgray")
     ax.axvline(0, color="gray", linestyle="--", linewidth=0.8)
     ax.set_title(
-        f"GRB058  unit {row['uid']}\n{row['session'][:8]}  (single peak)", fontsize=8
+        f"{row['subject']}  unit {row['uid']}\n{row['session'][:8]}  (single peak)",
+        fontsize=8,
     )
     ax.set_ylabel("sp/s", fontsize=8)
     ax.tick_params(labelsize=7)

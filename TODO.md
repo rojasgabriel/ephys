@@ -3,17 +3,19 @@
 ## Next up
 
 **Double-peak PSTH figure for Dario email — DONE (draft).**
-- Output: `figures/double_peak_dario.pdf` — single landscape page, 4 panels side-by-side.
-  - GRB058 unit 410 (3/12), unit 651 (3/12), unit 515 (3/19): 15 ms (blue) + 30 ms (orange) overlaid.
-  - GRB060 unit 248 (3/19): 15 ms only (no 30 ms sessions for this animal).
-  - GRB059: no double-peak units detected — absent from figure, mention in email.
+- Output: `figures/double_peak_dario.pdf` — single landscape page, 2 rows × 3 columns.
+  - Top row: best single-peak excited unit per animal (GRB058, GRB059, GRB060), 15 ms only, gray.
+  - Bottom row: double-peak units from GRB058 — units 410 and 651 (3/12), unit 515 (3/19) — 15 ms (blue) + 30 ms (orange) overlaid.
+  - GRB059 and GRB060 have no double-peak units (small samples, barely trained); absent from bottom row.
   - GRB006 (~11/150 double-peak units): referenced in email text; nidq pipeline not yet ported.
 - Script: `scripts/double_peak_pulse_split.py`
 - GRB006 archived figures stored in `figures/GRB006/` (unit 77 PETHs, rasters, spike duration histogram, copied from Marsa's Dec 2025 email).
-- Remaining: draft and send the Dario email (CC Anne). Anne's guidance (Apr 2): keep simple — just show examples, describe stimulus. Core question: is a double-peaked on-response to large flashes a known V1 phenomenon?
+- Remaining: attach figure and send the Dario email (Gmail draft ready, CC Anne + Marsa). Manually delete the superseded older draft.
 - Confounds to note in email: (1) 30 ms = ~2× photons at same LED intensity; (2) small 30 ms sample (30–34 first-of-train events); (3) first-pulse-only alignment.
 
 ## Analysis TODOs
+
+- **Locomotion effect replication (GRB058–060)**: replicate the GRB006 locomotion × V1 gain effect in the newer cohort. GRB058 is the primary SfN target; GRB059 and GRB060 are additional candidates once they have enough trials. Requires movement data (wheel/DLC) aligned to electrophysiology sessions.
 
 - **GRB006 events pipeline**: currently fails because events are handled through the obx logic. Needs a path for sessions recorded on nidq.
 - **Population summary**: compute % of units that are (a) stimulus-selective, (b) rate-selective, (c) double-peak. `selectivity.ipynb` already does the first; (b) and (c) still need tying together in a single summary.

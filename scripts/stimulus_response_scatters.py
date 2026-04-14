@@ -110,13 +110,13 @@ def plot_population_responses(trial_ts, spike_times_per_unit):
         kernel=None,
     )
 
-    # Movement vs Stationary Analysis (Top Right)
+    # Movement vs last-stationary Analysis (Top Right)
     balanced_trials, _ = get_balanced_trials(trial_ts, require_both_stim_types=True)
     balanced_movement_stims = np.array(
         [stims[0] for stims in balanced_trials.movement_stims]
     )
     balanced_stationary_stims = np.array(
-        [stims[0] for stims in balanced_trials.stationary_stims]
+        [stims[-1] for stims in balanced_trials.stationary_stims]
     )
 
     pop_peth_move, timebin_edges_move, _ = population_peth(
@@ -191,8 +191,8 @@ def plot_population_responses(trial_ts, spike_times_per_unit):
         ax2,
         stat_stimulus_response,
         move_stimulus_response,
-        "stationary stimulus activity (sp/s)",
-        "movement stimulus activity (sp/s)",
+        "last stationary stimulus activity (sp/s)",
+        "first movement stimulus activity (sp/s)",
         x_err=stat_sem,
         y_err=move_sem,
         highlight_idx=next_3_idx,

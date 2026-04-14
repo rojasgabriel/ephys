@@ -308,6 +308,7 @@ def classify_peak_count_sweep(
 def build_trial_stim_classification(
     align_ev: dict,
     trial_df,
+    require_both_stim_types: bool = True,
 ) -> "pd.DataFrame":
     """Classify each 15 ms stim pulse as stationary or movement for every trial.
 
@@ -330,8 +331,11 @@ def build_trial_stim_classification(
             't_sync', 't_react', and 'response' columns.
 
     Returns:
-        DataFrame with one row per trial that has both stationary and movement
-        stims.  Columns: trial_idx, cp_entry, cp_exit_obx, rp_entry,
+        DataFrame with one row per classified trial. If
+        require_both_stim_types=True (default), rows are limited to trials that
+        have both stationary and movement stim lists. If False, rows include
+        trials with at least one stationary stim and may have empty movement
+        lists. Columns: trial_idx, cp_entry, cp_exit_obx, rp_entry,
         stationary_stims (list), movement_stims (list), n_cp_entries
         (count of center port entries in this trial — > 1 indicates a
         reentrance was collapsed).
@@ -403,7 +407,9 @@ def build_trial_stim_classification(
         stat = stim_times[(stim_times >= cp_entry) & (stim_times < cp_exit)].tolist()
         move = stim_times[(stim_times >= cp_exit) & (stim_times <= rp_entry)].tolist()
 
-        if not stat or not move:
+        if not stat:
+            continue
+        if require_both_stim_types and not move:
             continue
 
         rows.append(
@@ -419,6 +425,35 @@ def build_trial_stim_classification(
         )
 
     return pd.DataFrame(rows)
+
+
+def extract_conditioned_stim_anchors(trial_ts: pd.DataFrame) -> dict[str, np.ndarray]:
+    """Extract common conditioned-PSTH anchor sets from trial-level stim lists."""
+    has_stat = trial_ts["stationary_stims"].apply(lambda x: len(x) > 0)
+    stat_trials = trial_ts[has_stat]
+    first_stationary_all = np.array(
+        [stims[0] for stims in stat_trials["stationary_stims"]],
+        dtype=float,
+    )
+
+    has_move = trial_ts["movement_stims"].apply(lambda x: len(x) > 0)
+    paired_trials = trial_ts[has_stat & has_move]
+    paired_last_stationary = np.array(
+        [stims[-1] for stims in paired_trials["stationary_stims"]],
+        dtype=float,
+    )
+    paired_first_movement = np.array(
+        [stims[0] for stims in paired_trials["movement_stims"]],
+        dtype=float,
+    )
+    paired_trial_idx = paired_trials["trial_idx"].to_numpy(dtype=int)
+
+    return {
+        "first_stationary_all": first_stationary_all,
+        "paired_last_stationary": paired_last_stationary,
+        "paired_first_movement": paired_first_movement,
+        "paired_trial_idx": paired_trial_idx,
+    }
 
 
 def calculate_stim_offsets(trial_ts, trial_start_col="center_port_entries"):

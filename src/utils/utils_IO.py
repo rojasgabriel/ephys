@@ -17,15 +17,12 @@ from labdata.schema import (
 PortEventDict = Dict[str, Dict[str, np.ndarray]]
 
 
-def fetch_good_units(
+def _fetch_good_units_table(
     subject: str,
     session: str,
     unit_criteria_id: int = 1,
-) -> dict[int, np.ndarray]:
-    """Fetch spike times (in seconds) for units passing quality criteria.
-
-    Returns a dict mapping unit_id → spike_times_seconds, sorted by depth.
-    """
+) -> tuple[pd.DataFrame, float]:
+    """Return good-unit rows with spike_times and depth, sorted by depth."""
     sess_query = (
         SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'
     ).proj()
@@ -45,10 +42,39 @@ def fetch_good_units(
         (EphysRecording.ProbeSetting() & sess_query).fetch("sampling_rate")[0]
     )
     good_units = good_units.sort_values("depth", ascending=True)
+    return good_units, srate
+
+
+def fetch_good_units(
+    subject: str,
+    session: str,
+    unit_criteria_id: int = 1,
+) -> dict[int, np.ndarray]:
+    """Fetch spike times (in seconds) for units passing quality criteria.
+
+    Returns a dict mapping unit_id → spike_times_seconds, sorted by depth.
+    """
+    good_units, srate = _fetch_good_units_table(subject, session, unit_criteria_id)
     st_per_unit = {
         row["unit_id"]: row["spike_times"] / srate for _, row in good_units.iterrows()
     }
     return st_per_unit
+
+
+def fetch_good_units_with_depth(
+    subject: str,
+    session: str,
+    unit_criteria_id: int = 1,
+) -> tuple[dict[int, np.ndarray], dict[int, float]]:
+    """Fetch good units and aligned depth metadata sorted by depth."""
+    good_units, srate = _fetch_good_units_table(subject, session, unit_criteria_id)
+    st_per_unit = {
+        row["unit_id"]: row["spike_times"] / srate for _, row in good_units.iterrows()
+    }
+    depth_per_unit = {
+        int(row["unit_id"]): float(row["depth"]) for _, row in good_units.iterrows()
+    }
+    return st_per_unit, depth_per_unit
 
 
 def fetch_session_events(

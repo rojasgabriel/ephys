@@ -206,11 +206,16 @@ def fetch_trial_metadata(
             (Chipmunk() & sess_dicts)
             * Chipmunk.Trial().proj(
                 "response",
+                "with_choice",
                 "rewarded",
+                "early_withdrawal",
                 "t_start",
                 "t_sync",
+                "t_initiate",
                 "t_stim",
+                "t_gocue",
                 "t_react",
+                "t_response",
                 "stim_duration",
             )
             * Chipmunk.TrialParameters().proj("stim_rate_vision", "category_boundary")
@@ -230,6 +235,7 @@ def fetch_trial_metadata(
         trial_df["trial_start_ts"] = trial_starts[:n]
         trial_df["prev_rewarded"] = trial_df["rewarded"].shift(1)
         trial_df["prev_response"] = trial_df["response"].shift(1)
+        trial_df["prev_stim_rate"] = trial_df["stim_rate_vision"].shift(1)
         trial_df["stim_category"] = pd.cut(
             trial_df["stim_rate_vision"] - trial_df["category_boundary"],
             bins=[-np.inf, -1e-9, 1e-9, np.inf],

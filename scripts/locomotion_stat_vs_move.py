@@ -50,7 +50,6 @@ PETH_KWARGS = dict(
     post_seconds=0.15,
     binwidth_ms=10,
 )
-PETH_SCALE_BACK = PETH_KWARGS["binwidth_ms"] / 1000.0
 RESP_WINDOW = (0.04, 0.10)
 EFFECT_WINDOW = (0.0, 0.12)
 PEAK_HALF_WINDOW_S = 0.015
@@ -593,8 +592,6 @@ def split_resp_per_unit(spike_times, stat_times, move_times, bc):
         move_times,
         **PETH_KWARGS,
     )
-    peth_stat *= PETH_SCALE_BACK
-    peth_move *= PETH_SCALE_BACK
     return (
         resp_per_unit(peth_stat, bc),
         resp_per_unit(peth_move, bc),
@@ -768,7 +765,6 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
         post_seconds=0.15,
         binwidth_ms=10,
     )
-    peth_all *= PETH_SCALE_BACK
     _, masks = compute_unit_selectivity(
         peth_all,
         bin_edges,
@@ -792,8 +788,6 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
         paired_first_move,
         **PETH_KWARGS,
     )
-    peth_stat_all *= PETH_SCALE_BACK
-    peth_move_all *= PETH_SCALE_BACK
 
     pk_stat_all = resp_per_unit(peth_stat_all, bc)
     pk_move_all = resp_per_unit(peth_move_all, bc)
@@ -1038,8 +1032,6 @@ def analyze_comparison(inputs: SessionInputs, comparison: ComparisonDef):
         paired_move,
         **PETH_KWARGS,
     )
-    peth_stat_all *= PETH_SCALE_BACK
-    peth_move_all *= PETH_SCALE_BACK
 
     pk_stat_all = resp_per_unit(peth_stat_all, bc)
     pk_move_all = resp_per_unit(peth_move_all, bc)

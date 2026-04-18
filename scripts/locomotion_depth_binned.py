@@ -33,7 +33,6 @@ PETH_KWARGS = dict(
     post_seconds=0.15,
     binwidth_ms=10,
 )
-PETH_SCALE_BACK = PETH_KWARGS["binwidth_ms"] / 1000.0
 RESP_WINDOW = (0.04, 0.10)
 EFFECT_WINDOW = (0.0, 0.12)
 PEAK_HALF_WINDOW_S = 0.015
@@ -148,9 +147,6 @@ peth_stat_all, _, bc = compute_population_peth(
 peth_move_all, _, _ = compute_population_peth(
     spike_times, paired_first_move, **PETH_KWARGS
 )
-peth_stat_all *= PETH_SCALE_BACK
-peth_move_all *= PETH_SCALE_BACK
-
 pk_stat_all = resp_per_unit(peth_stat_all, bc)
 pk_move_all = resp_per_unit(peth_move_all, bc)
 snr_s = snr_per_unit(peth_stat_all, bc)

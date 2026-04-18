@@ -58,7 +58,9 @@ SESSION_SHOW_UNITS = {
     "20260319_131303": [515],
 }
 
-OUT_PATH = Path("/Users/gabriel/lib/ephys/figures/dario_double_peak_story.pdf")
+FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/double_peak")
+FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+OUT_PATH = FIGURE_DIR / "dario_story.pdf"
 
 PETH_KWARGS = dict(
     pre_seconds=0.1,

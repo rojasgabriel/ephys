@@ -5,6 +5,8 @@ paired stationary-vs-movement logic as locomotion_stat_vs_move.py, then
 summarizes class composition as a function of recording depth.
 """
 
+from pathlib import Path
+
 import numpy as np
 import matplotlib
 
@@ -26,7 +28,12 @@ from ephys.src.utils.utils_analysis import (
 
 subject = "GRB058"
 session = "20260312_134952"
-OUT_PATH = f"/Users/gabriel/lib/ephys/figures/locomotion_depth_binned_{subject}_{session[:8]}.pdf"
+FIGURE_DIR = (
+    Path("/Users/gabriel/lib/ephys/figures/locomotion_depth")
+    / f"{subject}_{session[:8]}"
+)
+FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+OUT_PATH = FIGURE_DIR / "depth_binned.pdf"
 
 PETH_KWARGS = dict(
     pre_seconds=0.04,

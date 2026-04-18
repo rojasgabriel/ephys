@@ -34,17 +34,6 @@ LOCAL_TRIAL_TS = Path("/Users/gabriel/Downloads/Organized/Code/trial_ts.pkl")
 LOCAL_SPIKE_TIMES = Path(
     "/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"
 )
-OUTPUT_STEM_MAIN = "loco_scatter_grb006-3rdStat_grb058-lastStat"
-OUTPUT_STEM_OVERLAY = "loco_overlay_grb006-3rdStat_grb058-lastStat"
-OUTPUT_STEM_OVERLAY_SUMMARY = "loco_timingCtrl_grb006-3rdStat_grb058-lastStat"
-OUTPUT_STEM_DEPTH = "loco_depth_grb006-3rdStat_grb058-lastStat"
-OUT_PATH = Path(f"/Users/gabriel/lib/ephys/figures/{OUTPUT_STEM_MAIN}.pdf")
-OUT_PATH_OVERLAY = Path(f"/Users/gabriel/lib/ephys/figures/{OUTPUT_STEM_OVERLAY}.pdf")
-OUT_PATH_OVERLAY_SUMMARY = Path(
-    f"/Users/gabriel/lib/ephys/figures/{OUTPUT_STEM_OVERLAY_SUMMARY}.pdf"
-)
-OUT_PATH_DEPTH = Path(f"/Users/gabriel/lib/ephys/figures/{OUTPUT_STEM_DEPTH}.pdf")
-
 PETH_KWARGS = dict(
     pre_seconds=0.04,
     post_seconds=0.15,
@@ -64,6 +53,30 @@ MAIN_ANCHOR_CONFIG = {
 }
 SUMMARY_OFFSET_WINDOW_S = (0.5, 0.7)
 SUMMARY_OFFSET_WIGGLE_S = 0.1
+
+
+def _anchor_name(stationary_index: int | None) -> str:
+    if stationary_index is None:
+        return "lastStat"
+    n = stationary_index + 1
+    if 10 <= (n % 100) <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}Stat"
+
+
+RUN_TAG = (
+    f"grb006-{_anchor_name(MAIN_ANCHOR_CONFIG['GRB006']['stationary_index'])}"
+    f"_grb058-{_anchor_name(MAIN_ANCHOR_CONFIG['GRB058']['stationary_index'])}"
+)
+FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/locomotion") / RUN_TAG
+FIGURE_DIR.mkdir(parents=True, exist_ok=True)
+
+OUT_PATH = FIGURE_DIR / "loco_scatter.pdf"
+OUT_PATH_OVERLAY = FIGURE_DIR / "loco_overlay.pdf"
+OUT_PATH_OVERLAY_SUMMARY = FIGURE_DIR / "loco_timingCtrl.pdf"
+OUT_PATH_DEPTH = FIGURE_DIR / "loco_depth.pdf"
 
 
 @dataclass

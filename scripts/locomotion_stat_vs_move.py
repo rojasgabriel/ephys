@@ -1519,7 +1519,8 @@ def build_overlay_scatter_figure(results):
 
 
 def build_overlay_summary_figure(summary_rows):
-    fig, axes = plt.subplots(3, 3, figsize=(15, 12))
+    n_rows = len(summary_rows)
+    fig, axes = plt.subplots(n_rows, 3, figsize=(15, 4 * n_rows))
     subject_colors = ["#1f77b4", "#d62728"]
     panel_defs = [
         (
@@ -1567,7 +1568,7 @@ def build_overlay_summary_figure(summary_rows):
                     f"{result['subject']}: units={len(pk_s)}, trials={n_trials}"
                 )
             overlay_scatter_log(ax, panel_specs, panel_name)
-            if row_idx != 2:
+            if row_idx != n_rows - 1:
                 ax.set_xlabel("")
             if col_idx != 0:
                 ax.set_ylabel("")
@@ -1825,14 +1826,21 @@ def main():
         ),
         ComparisonDef(
             key="timing_matched",
-            row_label="Row 2: training-timing correction",
+            row_label="Row 2: training-timing correction (2nd stat)",
             description="GRB006 uses 2nd stationary; GRB058 uses last stationary.",
             mode="indexed_stationary",
             stationary_index_by_subject={"GRB006": 1, "GRB058": None},
         ),
         ComparisonDef(
+            key="timing_matched_3rd",
+            row_label="Row 3: training-timing correction (3rd stat)",
+            description="GRB006 uses 3rd stationary; GRB058 uses last stationary.",
+            mode="indexed_stationary",
+            stationary_index_by_subject={"GRB006": 2, "GRB058": None},
+        ),
+        ComparisonDef(
             key="offset_500_700ms",
-            row_label="Row 3: strict 0.5-0.7 s control",
+            row_label="Row 4: strict 0.5-0.7 s control",
             description="Closest offset-matched stationary and movement pulses in 0.5-0.7 s.",
             mode="offset_matched",
             offset_window_s=SUMMARY_OFFSET_WINDOW_S,

@@ -67,7 +67,6 @@ PETH_KWARGS = dict(
     t_rise=None,
     t_decay=None,
 )
-PETH_SCALE_BACK = PETH_KWARGS["binwidth_ms"] / 1000.0
 SELECTIVITY_KWARGS = dict(
     base_window=(-0.04, 0.0),
     resp_window=(0.06, 0.10),
@@ -134,7 +133,6 @@ def collect_grb006():
         alignment_times=first_stim,
         **PETH_KWARGS,
     )
-    peth *= PETH_SCALE_BACK
     _, masks = compute_unit_selectivity(
         peth, bin_edges, unit_ids=unit_ids, **SELECTIVITY_KWARGS
     )
@@ -222,7 +220,6 @@ def collect_grb058_session(session):
         alignment_times=align_ev["first_stim_ev_15ms"],
         **PETH_KWARGS,
     )
-    peth_15 *= PETH_SCALE_BACK
     _, masks = compute_unit_selectivity(
         peth_15, bin_edges, unit_ids=unit_ids, **SELECTIVITY_KWARGS
     )
@@ -251,7 +248,6 @@ def collect_grb058_session(session):
             alignment_times=align_ev["first_stim_ev_30ms"],
             **PETH_KWARGS,
         )
-        peth_30 *= PETH_SCALE_BACK
         peaks_df_30 = classify_peak_count(
             peth_30, bin_centers, unit_ids=double_ids, **PEAK_KWARGS
         )
@@ -300,10 +296,10 @@ def plot_session_mix(ax, session_data):
     ax.bar(["15 ms", "30 ms"], counts, color=["tab:blue", "tab:orange"], width=0.6)
     ax.set_title(
         f"{session_data['label']}\n4 Hz first-stim trial mix",
-        fontsize=8,
+        fontsize=10,
     )
-    ax.set_ylabel("Classified trials", fontsize=8)
-    ax.tick_params(labelsize=7)
+    ax.set_ylabel("Classified trials", fontsize=10)
+    ax.tick_params(labelsize=9)
 
 
 def plot_summary_table(ax, session_0312, session_0319):
@@ -328,8 +324,8 @@ def plot_summary_table(ax, session_0312, session_0319):
         transform=ax.transAxes,
         ha="left",
         va="top",
-        fontsize=8,
-        linespacing=1.4,
+        fontsize=10,
+        linespacing=1.5,
         bbox={"boxstyle": "round,pad=0.4", "facecolor": "#f7f7f7", "alpha": 0.95},
     )
 
@@ -345,10 +341,10 @@ def make_figure(grb006, session_0312, session_0319):
         mark_peaks(ax, row["peaks_df_row"], "tab:blue")
         ax.axvline(0, color="gray", linestyle="--", linewidth=0.8)
         peak_ms = ", ".join(str(x) for x in row["peak_times_ms"])
-        ax.set_title(f"GRB006 unit {uid}\npeaks at {peak_ms} ms", fontsize=8)
-        ax.set_xlabel("Time from first stim onset (s)", fontsize=8)
-        ax.set_ylabel("sp/s", fontsize=8)
-        ax.tick_params(labelsize=7)
+        ax.set_title(f"GRB006 unit {uid}\npeaks at {peak_ms} ms", fontsize=10)
+        ax.set_xlabel("Time from first stim onset (s)", fontsize=10)
+        ax.set_ylabel("sp/s", fontsize=10)
+        ax.tick_params(labelsize=9)
         ax.set_ylim(bottom=0)
 
     session_0312_axes = [fig.add_subplot(gs[1, i]) for i in range(3)]
@@ -364,12 +360,12 @@ def make_figure(grb006, session_0312, session_0319):
         )
         mark_peaks(ax, row["peak_row_30"], "tab:orange")
         ax.axvline(0, color="gray", linestyle="--", linewidth=0.8)
-        ax.set_title(f"{session_0312['label']}\nunit {uid}", fontsize=8)
-        ax.set_xlabel("Time from first stim onset (s)", fontsize=8)
-        ax.set_ylabel("sp/s", fontsize=8)
-        ax.tick_params(labelsize=7)
+        ax.set_title(f"{session_0312['label']}\nunit {uid}", fontsize=10)
+        ax.set_xlabel("Time from first stim onset (s)", fontsize=10)
+        ax.set_ylabel("sp/s", fontsize=10)
+        ax.tick_params(labelsize=9)
         ax.set_ylim(bottom=0)
-        ax.legend(fontsize=7, frameon=False, loc="upper left")
+        ax.legend(fontsize=8, frameon=False, loc="upper left")
     plot_session_mix(session_0312_axes[2], session_0312)
 
     session_0319_axes = [fig.add_subplot(gs[2, i]) for i in range(3)]
@@ -394,13 +390,13 @@ def make_figure(grb006, session_0312, session_0319):
     session_0319_axes[0].axvline(0, color="gray", linestyle="--", linewidth=0.8)
     session_0319_axes[0].set_title(
         f"{session_0319['label']}\nunit {SESSION_SHOW_UNITS['20260319_131303'][0]}",
-        fontsize=8,
+        fontsize=10,
     )
-    session_0319_axes[0].set_xlabel("Time from first stim onset (s)", fontsize=8)
-    session_0319_axes[0].set_ylabel("sp/s", fontsize=8)
-    session_0319_axes[0].tick_params(labelsize=7)
+    session_0319_axes[0].set_xlabel("Time from first stim onset (s)", fontsize=10)
+    session_0319_axes[0].set_ylabel("sp/s", fontsize=10)
+    session_0319_axes[0].tick_params(labelsize=9)
     session_0319_axes[0].set_ylim(bottom=0)
-    session_0319_axes[0].legend(fontsize=7, frameon=False, loc="upper left")
+    session_0319_axes[0].legend(fontsize=8, frameon=False, loc="upper left")
     plot_session_mix(session_0319_axes[1], session_0319)
     plot_summary_table(session_0319_axes[2], session_0312, session_0319)
 

@@ -55,7 +55,7 @@ RESP_WINDOW = (0.04, 0.10)
 EFFECT_WINDOW = (0.0, 0.12)
 PEAK_HALF_WINDOW_S = 0.015
 CANONICAL_LATENCY_WINDOW = (0.015, 0.070)
-TITLE_KW = dict(fontsize=9, pad=3)
+TITLE_KW = dict(fontsize=11, pad=3)
 RATE_SPLIT_HZ = 12.0
 DEPTH_BIN_WIDTH_UM = 100.0
 PNG_DPI = 300
@@ -1257,8 +1257,8 @@ def scatter_log(ax, pk_s, pk_m, title, sem_s=None, sem_m=None):
         ax.set_ylim(0, 1)
         ax.set_xticks([])
         ax.set_yticks([])
-        ax.set_xlabel("Stationary (sp/s)")
-        ax.set_ylabel("Movement (sp/s)")
+        ax.set_xlabel("Stationary (sp/s)", fontsize=10)
+        ax.set_ylabel("Movement (sp/s)", fontsize=10)
         ax.set_title(title, **TITLE_KW)
         return
     all_pos = np.concatenate([pk_s, pk_m])
@@ -1284,8 +1284,8 @@ def scatter_log(ax, pk_s, pk_m, title, sem_s=None, sem_m=None):
     ax.set_xlim(lim_lo, lim_hi)
     ax.set_ylim(lim_lo, lim_hi)
     ax.set_aspect("equal")
-    ax.set_xlabel("Stationary (sp/s)")
-    ax.set_ylabel("Movement (sp/s)")
+    ax.set_xlabel("Stationary (sp/s)", fontsize=10)
+    ax.set_ylabel("Movement (sp/s)", fontsize=10)
     ax.set_title(title, **TITLE_KW)
 
 
@@ -1343,8 +1343,8 @@ def overlay_scatter_log(ax, panel_specs, title):
         ax.set_ylim(0, 1)
         ax.set_xticks([])
         ax.set_yticks([])
-        ax.set_xlabel("Stationary (sp/s)")
-        ax.set_ylabel("Movement (sp/s)")
+        ax.set_xlabel("Stationary (sp/s)", fontsize=10)
+        ax.set_ylabel("Movement (sp/s)", fontsize=10)
         ax.set_title(title, **TITLE_KW)
         return
 
@@ -1384,8 +1384,8 @@ def overlay_scatter_log(ax, panel_specs, title):
     ax.set_xlim(lim_lo, lim_hi)
     ax.set_ylim(lim_lo, lim_hi)
     ax.set_aspect("equal")
-    ax.set_xlabel("Stationary (sp/s)")
-    ax.set_ylabel("Movement (sp/s)")
+    ax.set_xlabel("Stationary (sp/s)", fontsize=10)
+    ax.set_ylabel("Movement (sp/s)", fontsize=10)
     ax.set_title(title, **TITLE_KW)
 
 
@@ -1419,6 +1419,18 @@ def plot_scatter_row(fig, gs, row_start, result: SessionAnalysis):
         sem_s=result.sem_stat_high,
         sem_m=result.sem_move_high,
     )
+    for ax, letter in zip(axes, ["A", "B", "C"]):
+        ax.text(
+            -0.12,
+            1.08,
+            letter,
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            fontsize=12,
+            fontweight="bold",
+            clip_on=False,
+        )
     axes[0].text(
         -0.38,
         1.22,
@@ -1657,10 +1669,10 @@ def build_depth_figure(results):
             color=color,
             label=result.subject,
         )
-    ax.set_xlabel("Depth (um)")
-    ax.set_ylabel("Delta move - stat (sp/s)")
+    ax.set_xlabel("Depth (µm)", fontsize=10)
+    ax.set_ylabel("Δ move − stat (sp/s)", fontsize=10)
     ax.set_title("Per-unit locomotion effect vs depth", **TITLE_KW)
-    ax.legend(frameon=False, fontsize=8, loc="lower right")
+    ax.legend(frameon=False, fontsize=9, loc="lower right")
 
     ax = axs[0, 1]
     for result, color in zip(results, colors):
@@ -1680,13 +1692,13 @@ def build_depth_figure(results):
             label=result.subject,
         )
     ax.axhline(0, color="gray", linestyle="--", lw=0.8)
-    ax.set_xlabel("Depth bin center (um)")
-    ax.set_ylabel("Delta move - stat (sp/s)")
+    ax.set_xlabel("Depth bin center (µm)", fontsize=10)
+    ax.set_ylabel("Δ move − stat (sp/s)", fontsize=10)
     ax.set_title(
-        f"Median locomotion effect by depth ({int(DEPTH_BIN_WIDTH_UM)} um bins)",
+        f"Median locomotion effect by depth ({int(DEPTH_BIN_WIDTH_UM)} µm bins)",
         **TITLE_KW,
     )
-    ax.legend(frameon=False, fontsize=8, loc="lower right")
+    ax.legend(frameon=False, fontsize=9, loc="lower right")
 
     ax = axs[1, 0]
     for i, (result, color) in enumerate(zip(results, colors)):
@@ -1701,10 +1713,10 @@ def build_depth_figure(results):
             alpha=0.7,
             label=result.subject,
         )
-    ax.set_xlabel("Depth bin center (um)")
-    ax.set_ylabel("Unit count")
+    ax.set_xlabel("Depth bin center (µm)", fontsize=10)
+    ax.set_ylabel("Unit count", fontsize=10)
     ax.set_title("Depth distribution of analyzable units", **TITLE_KW)
-    ax.legend(frameon=False, fontsize=8, loc="upper right")
+    ax.legend(frameon=False, fontsize=9, loc="upper right")
 
     ax = axs[1, 1]
     summary_rows = []
@@ -1731,9 +1743,9 @@ def build_depth_figure(results):
     ax.axhline(0, color="gray", linestyle="--", lw=0.8)
     ax.set_xticks(x)
     ax.set_xticklabels(labels)
-    ax.set_ylabel("Mean delta move - stat (sp/s)")
+    ax.set_ylabel("Mean Δ move − stat (sp/s)", fontsize=10)
     ax.set_title("Shallower vs deeper half within subject", **TITLE_KW)
-    ax.legend(frameon=False, fontsize=8, loc="upper right")
+    ax.legend(frameon=False, fontsize=9, loc="upper right")
 
     fig.suptitle(
         "Depth analysis of locomotion enhancement (GRB006 vs GRB058)",
@@ -1752,8 +1764,7 @@ def build_figure(results):
     plot_example_row(fig, gs, 4, results[1])
     plot_scatter_row(fig, gs, 5, results[1])
     fig.suptitle(
-        "Behavior + stationary-anchor vs first movement\n"
-        "GRB006 uses 3rd stationary; GRB058 uses last stationary",
+        "Locomotion enhances VISp responses\nGRB006 (expert) · GRB058 (in training)",
         fontsize=12,
         y=0.995,
     )

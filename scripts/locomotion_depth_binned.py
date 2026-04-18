@@ -196,9 +196,15 @@ for bi in range(n_bins):
     delta_q25[bi] = np.percentile(dvals, 25)
     delta_q75[bi] = np.percentile(dvals, 75)
 
-frac_exc = np.divide(count_exc, count_total, where=count_total > 0)
-frac_supp = np.divide(count_supp, count_total, where=count_total > 0)
-frac_no = np.divide(count_no, count_total, where=count_total > 0)
+frac_exc = np.divide(
+    count_exc, count_total, out=np.zeros(n_bins, dtype=float), where=count_total > 0
+)
+frac_supp = np.divide(
+    count_supp, count_total, out=np.zeros(n_bins, dtype=float), where=count_total > 0
+)
+frac_no = np.divide(
+    count_no, count_total, out=np.zeros(n_bins, dtype=float), where=count_total > 0
+)
 
 fig, axs = plt.subplots(2, 2, figsize=(13, 10), constrained_layout=True)
 
@@ -228,10 +234,10 @@ ax.scatter(
     color="tab:red",
     label="Move-suppressed",
 )
-ax.set_xlabel("Depth (µm)")
-ax.set_ylabel("Δ move - stat (sp/s)")
-ax.set_title("Per-unit locomotion effect vs depth")
-ax.legend(frameon=False, fontsize=8, loc="best")
+ax.set_xlabel("Depth (µm)", fontsize=10)
+ax.set_ylabel("Δ move − stat (sp/s)", fontsize=10)
+ax.set_title("Per-unit locomotion effect vs depth", fontsize=11)
+ax.legend(frameon=False, fontsize=10, loc="best")
 
 ax = axs[0, 1]
 bar_w = DEPTH_BIN_WIDTH_UM * 0.85
@@ -245,17 +251,23 @@ ax.bar(
     color="tab:blue",
     label="Move-excited",
 )
-ax.set_ylim(0, 1.02)
-ax.set_xlabel("Depth bin center (µm)")
-ax.set_ylabel("Fraction of analyzable units")
-ax.set_title(f"Response-type composition by depth ({int(DEPTH_BIN_WIDTH_UM)} µm bins)")
-ax.legend(frameon=False, fontsize=8, loc="best")
+for cx, n in zip(centers, count_total):
+    if n > 0:
+        ax.text(cx, 1.03, f"n={n}", ha="center", va="bottom", fontsize=8)
+ax.set_ylim(0, 1.12)
+ax.set_xlabel("Depth bin center (µm)", fontsize=10)
+ax.set_ylabel("Fraction of analyzable units", fontsize=10)
+ax.set_title(
+    f"Response-type composition by depth ({int(DEPTH_BIN_WIDTH_UM)} µm bins)",
+    fontsize=11,
+)
+ax.legend(frameon=False, fontsize=10, loc="best")
 
 ax = axs[1, 0]
 ax.bar(centers, count_total, width=bar_w, color="0.35")
-ax.set_xlabel("Depth bin center (µm)")
-ax.set_ylabel("Unit count")
-ax.set_title("Analyzable units per depth bin")
+ax.set_xlabel("Depth bin center (µm)", fontsize=10)
+ax.set_ylabel("Unit count", fontsize=10)
+ax.set_title("Analyzable units per depth bin", fontsize=11)
 
 ax = axs[1, 1]
 valid_bins = np.isfinite(delta_med)
@@ -274,9 +286,9 @@ ax.errorbar(
     markersize=4,
     lw=1.2,
 )
-ax.set_xlabel("Depth bin center (µm)")
-ax.set_ylabel("Δ move - stat (sp/s)")
-ax.set_title("Median locomotion effect by depth (IQR)")
+ax.set_xlabel("Depth bin center (µm)", fontsize=10)
+ax.set_ylabel("Δ move − stat (sp/s)", fontsize=10)
+ax.set_title("Median locomotion effect by depth (IQR)", fontsize=11)
 
 fig.suptitle(
     (

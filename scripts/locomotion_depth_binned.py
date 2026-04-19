@@ -27,7 +27,7 @@ from ephys.src.utils.utils_analysis import (
 )
 
 subject = "GRB058"
-session = "20260312_134952"
+session = "20260224_152424"
 FIGURE_DIR = (
     Path("/Users/gabriel/lib/ephys/figures/locomotion_depth")
     / f"{subject}_{session[:8]}"

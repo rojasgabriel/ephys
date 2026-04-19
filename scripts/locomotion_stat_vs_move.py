@@ -1794,7 +1794,7 @@ def main():
     )
     grb058 = load_db_session(
         subject="GRB058",
-        session="20260312_134952",
+        session="20260224_152424",
     )
 
     results = [

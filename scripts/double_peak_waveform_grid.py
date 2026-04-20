@@ -21,7 +21,6 @@ GRB058 is fully DB-backed.
 Output
 ------
     figures/double_peak/waveform_grid.pdf
-    figures/double_peak/waveform_grid_pooled.pdf
 """
 
 from pathlib import Path
@@ -70,9 +69,6 @@ GRB006_SPIKE_TIMES_PATHS = [
 ]
 
 OUT_PATH = Path("/Users/gabriel/lib/ephys/figures/double_peak/waveform_grid.pdf")
-OUT_PATH_POOLED = Path(
-    "/Users/gabriel/lib/ephys/figures/double_peak/waveform_grid_pooled.pdf"
-)
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 UNIT_CRITERIA_ID = 1
@@ -426,12 +422,6 @@ def main():
         pdf.savefig(fig, bbox_inches="tight")
     plt.close(fig)
     print(f"\nSaved → {OUT_PATH}")
-
-    fig_pool = make_pooled(session_data)
-    with PdfPages(OUT_PATH_POOLED) as pdf:
-        pdf.savefig(fig_pool, bbox_inches="tight")
-    plt.close(fig_pool)
-    print(f"Saved → {OUT_PATH_POOLED}")
 
 
 if __name__ == "__main__":

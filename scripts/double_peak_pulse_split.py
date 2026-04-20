@@ -37,7 +37,7 @@ from ephys.src.utils.utils_analysis import (
 )
 
 GRB058_SESSIONS = ["20260312_134952", "20260319_131303"]
-OUT_PATH = "/Users/gabriel/lib/ephys/figures/double_peak_dario.pdf"
+OUT_PATH = "/Users/gabriel/lib/ephys/figures/double_peak/pulse_split.pdf"
 
 
 # ---------------------------------------------------------------------------

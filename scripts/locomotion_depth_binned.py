@@ -37,10 +37,7 @@ from ephys.src.utils.utils_analysis import (
 
 subject = "GRB058"
 session = "20260312_134952"
-FIGURE_DIR = (
-    Path("/Users/gabriel/lib/ephys/figures/locomotion_depth")
-    / f"{subject}_{session[:8]}"
-)
+FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/locomotion")
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 OUT_PATH = FIGURE_DIR / "depth_binned.pdf"
 

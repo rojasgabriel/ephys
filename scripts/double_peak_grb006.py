@@ -5,7 +5,7 @@ to identify double-peak units with the same unsmoothed 10 ms-bin settings used
 for the GRB058 Dario figure.
 
 Output:
-    figures/grb006_double_peak_examples.pdf
+    figures/double_peak/grb006_examples.pdf
 
 Figure layout:
     2 rows x 3 columns showing the top-ranked GRB006 double-peak units,
@@ -47,7 +47,7 @@ SPIKE_TIMES_PATHS = [
     ),
     Path("/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"),
 ]
-OUT_PATH = Path("/Users/gabriel/lib/ephys/figures/grb006_double_peak_examples.pdf")
+OUT_PATH = Path("/Users/gabriel/lib/ephys/figures/double_peak/grb006_examples.pdf")
 
 N_PANELS = 6
 

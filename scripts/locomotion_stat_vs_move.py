@@ -74,13 +74,13 @@ RUN_TAG = (
     f"grb006-{_anchor_name(MAIN_ANCHOR_CONFIG['GRB006']['stationary_index'])}"
     f"_grb058-{_anchor_name(MAIN_ANCHOR_CONFIG['GRB058']['stationary_index'])}"
 )
-FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/locomotion") / RUN_TAG
+FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/locomotion")
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 
-OUT_PATH = FIGURE_DIR / "loco_scatter.pdf"
-OUT_PATH_OVERLAY = FIGURE_DIR / "loco_overlay.pdf"
-OUT_PATH_OVERLAY_SUMMARY = FIGURE_DIR / "loco_timingCtrl.pdf"
-OUT_PATH_DEPTH = FIGURE_DIR / "loco_depth.pdf"
+OUT_PATH = FIGURE_DIR / "scatter.pdf"
+OUT_PATH_OVERLAY = FIGURE_DIR / "overlay.pdf"
+OUT_PATH_OVERLAY_SUMMARY = FIGURE_DIR / "timing_ctrl.pdf"
+OUT_PATH_DEPTH = FIGURE_DIR / "depth.pdf"
 
 
 @dataclass

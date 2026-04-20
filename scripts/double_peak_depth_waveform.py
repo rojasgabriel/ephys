@@ -37,8 +37,7 @@ Usage
 
 Outputs
 -------
-    figures/double_peak/depth_waveform_{SUBJECT}_{YYYYMMDD}.pdf  (per session)
-    figures/double_peak/depth_waveform_pooled.pdf                 (pooled)
+    figures/double_peak/depth_waveform.pdf
 """
 
 from pathlib import Path
@@ -472,8 +471,6 @@ def _pooled_figure(records):
 
 
 def main():
-    records = []
-
     for subject, session in SESSIONS:
         print(f"\n{'=' * 60}")
         print(f"  {subject} / {session}")
@@ -515,23 +512,11 @@ def main():
                 )
 
         fig = _session_figure(subject, session, df)
-        out = FIGURE_DIR / f"depth_waveform_{subject}_{session[:8]}.pdf"
+        out = FIGURE_DIR / "depth_waveform.pdf"
         with PdfPages(out) as pdf:
             pdf.savefig(fig, bbox_inches="tight")
         plt.close(fig)
         print(f"  → {out}")
-
-        records.append(dict(subject=subject, session=session, df=df))
-
-    if len(records) >= 2:
-        fig_pool = _pooled_figure(records)
-        out_pool = FIGURE_DIR / "depth_waveform_pooled.pdf"
-        with PdfPages(out_pool) as pdf:
-            pdf.savefig(fig_pool, bbox_inches="tight")
-        plt.close(fig_pool)
-        print(f"\nPooled → {out_pool}")
-    else:
-        print("\nOnly one session — skipping pooled figure.")
 
 
 if __name__ == "__main__":

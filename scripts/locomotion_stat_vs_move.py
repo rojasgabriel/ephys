@@ -25,7 +25,6 @@ import matplotlib.pyplot as plt
 
 from ephys.src.config.locomotion import (
     BASELINE_WINDOW,
-    DEPTH_BIN_WIDTH_UM,
     PEAK_HALF_WINDOW_S,
     PETH_KWARGS,
     QVAL_ALPHA,
@@ -49,7 +48,6 @@ LOCAL_SPIKE_TIMES = Path(
 )
 CANONICAL_LATENCY_WINDOW = (0.015, 0.070)
 TITLE_KW = dict(fontsize=11, pad=3)
-PNG_DPI = 300
 MAIN_ANCHOR_CONFIG = {
     "GRB006": {"stationary_index": 2},
     "GRB058": {"stationary_index": None},
@@ -79,7 +77,6 @@ FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 OUT_PATH = FIGURE_DIR / "scatter.pdf"
 OUT_PATH_OVERLAY = FIGURE_DIR / "overlay.pdf"
 OUT_PATH_OVERLAY_SUMMARY = FIGURE_DIR / "timing_ctrl.pdf"
-OUT_PATH_DEPTH = FIGURE_DIR / "depth.pdf"
 
 
 @dataclass
@@ -1658,146 +1655,6 @@ def build_overlay_summary_figure(summary_rows):
     return fig
 
 
-def build_depth_bins(depth_um, width_um=DEPTH_BIN_WIDTH_UM):
-    lo = np.floor(np.nanmin(depth_um) / width_um) * width_um
-    hi = np.ceil(np.nanmax(depth_um) / width_um) * width_um
-    edges = np.arange(lo, hi + width_um, width_um)
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    return edges, centers
-
-
-def depth_bin_summary(depth_um, values, width_um=DEPTH_BIN_WIDTH_UM):
-    valid = np.isfinite(depth_um) & np.isfinite(values)
-    if not valid.any():
-        return np.array([]), np.array([]), np.array([]), np.array([])
-    edges, centers = build_depth_bins(depth_um[valid], width_um=width_um)
-    bin_idx = np.digitize(depth_um[valid], edges) - 1
-    bin_idx = np.clip(bin_idx, 0, len(centers) - 1)
-    med = np.full(len(centers), np.nan, dtype=float)
-    q25 = np.full(len(centers), np.nan, dtype=float)
-    q75 = np.full(len(centers), np.nan, dtype=float)
-    counts = np.zeros(len(centers), dtype=int)
-    vals = values[valid]
-    for bi in range(len(centers)):
-        in_bin = bin_idx == bi
-        counts[bi] = int(in_bin.sum())
-        if not counts[bi]:
-            continue
-        med[bi] = float(np.median(vals[in_bin]))
-        q25[bi] = float(np.percentile(vals[in_bin], 25))
-        q75[bi] = float(np.percentile(vals[in_bin], 75))
-    keep = counts > 0
-    return centers[keep], med[keep], q25[keep], q75[keep]
-
-
-def build_depth_figure(results):
-    fig, axs = plt.subplots(2, 2, figsize=(13, 10), constrained_layout=True)
-    colors = ["#1f77b4", "#d62728"]
-
-    all_depths = [
-        result.unit_depth_um[np.isfinite(result.unit_depth_um)] for result in results
-    ]
-    all_depths = [arr for arr in all_depths if len(arr)]
-    global_edges, global_centers = build_depth_bins(np.concatenate(all_depths))
-    bar_w = DEPTH_BIN_WIDTH_UM * 0.38
-
-    ax = axs[0, 0]
-    ax.axhline(0, color="gray", linestyle="--", lw=0.8)
-    for result, color in zip(results, colors):
-        valid = np.isfinite(result.unit_depth_um)
-        ax.scatter(
-            result.unit_depth_um[valid],
-            result.delta_move[valid],
-            s=20,
-            alpha=0.18,
-            color=color,
-            label=result.subject,
-        )
-    ax.set_xlabel("Depth (µm)", fontsize=10)
-    ax.set_ylabel("Δ move − stat (sp/s)", fontsize=10)
-    ax.set_title("Per-unit locomotion effect vs depth", **TITLE_KW)
-    ax.legend(frameon=False, fontsize=9, loc="lower right")
-
-    ax = axs[0, 1]
-    for result, color in zip(results, colors):
-        centers, med, q25, q75 = depth_bin_summary(
-            result.unit_depth_um, result.delta_move
-        )
-        if len(centers) == 0:
-            continue
-        ax.errorbar(
-            centers,
-            med,
-            yerr=np.vstack([med - q25, q75 - med]),
-            fmt="o-",
-            color=color,
-            lw=1.4,
-            ms=4,
-            label=result.subject,
-        )
-    ax.axhline(0, color="gray", linestyle="--", lw=0.8)
-    ax.set_xlabel("Depth bin center (µm)", fontsize=10)
-    ax.set_ylabel("Δ move − stat (sp/s)", fontsize=10)
-    ax.set_title(
-        f"Median locomotion effect by depth ({int(DEPTH_BIN_WIDTH_UM)} µm bins)",
-        **TITLE_KW,
-    )
-    ax.legend(frameon=False, fontsize=9, loc="lower right")
-
-    ax = axs[1, 0]
-    for i, (result, color) in enumerate(zip(results, colors)):
-        valid_depth = result.unit_depth_um[np.isfinite(result.unit_depth_um)]
-        counts, _ = np.histogram(valid_depth, bins=global_edges)
-        offset = (-0.5 + i) * bar_w
-        ax.bar(
-            global_centers + offset,
-            counts,
-            width=bar_w,
-            color=color,
-            alpha=0.7,
-            label=result.subject,
-        )
-    ax.set_xlabel("Depth bin center (µm)", fontsize=10)
-    ax.set_ylabel("Unit count", fontsize=10)
-    ax.set_title("Depth distribution of analyzable units", **TITLE_KW)
-    ax.legend(frameon=False, fontsize=9, loc="upper right")
-
-    ax = axs[1, 1]
-    summary_rows = []
-    labels = []
-    for result in results:
-        valid = np.isfinite(result.unit_depth_um)
-        top = valid & (
-            result.unit_depth_um <= np.nanmedian(result.unit_depth_um[valid])
-        )
-        bottom = valid & (
-            result.unit_depth_um > np.nanmedian(result.unit_depth_um[valid])
-        )
-        summary_rows.append(
-            [
-                np.nanmean(result.delta_move[top]) if top.any() else np.nan,
-                np.nanmean(result.delta_move[bottom]) if bottom.any() else np.nan,
-            ]
-        )
-        labels.append(result.subject)
-    summary = np.asarray(summary_rows, dtype=float)
-    x = np.arange(len(labels))
-    ax.bar(x - 0.18, summary[:, 0], width=0.36, color="0.55", label="shallower half")
-    ax.bar(x + 0.18, summary[:, 1], width=0.36, color="0.2", label="deeper half")
-    ax.axhline(0, color="gray", linestyle="--", lw=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels)
-    ax.set_ylabel("Mean Δ move − stat (sp/s)", fontsize=10)
-    ax.set_title("Shallower vs deeper half within subject", **TITLE_KW)
-    ax.legend(frameon=False, fontsize=9, loc="upper right")
-
-    fig.suptitle(
-        "Depth analysis of locomotion enhancement (GRB006 vs GRB058)",
-        fontsize=12,
-    )
-    return fig
-
-
 def build_figure(results):
     fig = plt.figure(figsize=(16, 26))
     gs = fig.add_gridspec(6, 3, hspace=0.95, wspace=0.35)
@@ -1815,12 +1672,9 @@ def build_figure(results):
     return fig
 
 
-def save_pdf_and_png(fig, pdf_path):
-    png_path = pdf_path.with_suffix(".png")
+def save_pdf(fig, pdf_path):
     fig.savefig(pdf_path, bbox_inches="tight")
-    fig.savefig(png_path, bbox_inches="tight", dpi=PNG_DPI)
     print(f"\nFigure saved: {pdf_path}")
-    print(f"Figure saved: {png_path}")
 
 
 def main():
@@ -1847,11 +1701,11 @@ def main():
     ]
     fig = build_figure(results)
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    save_pdf_and_png(fig, OUT_PATH)
+    save_pdf(fig, OUT_PATH)
     plt.close(fig)
 
     fig_overlay = build_overlay_scatter_figure(results)
-    save_pdf_and_png(fig_overlay, OUT_PATH_OVERLAY)
+    save_pdf(fig_overlay, OUT_PATH_OVERLAY)
     plt.close(fig_overlay)
 
     summary_comparisons = [
@@ -1896,12 +1750,8 @@ def main():
         for comparison in summary_comparisons
     ]
     fig_overlay_summary = build_overlay_summary_figure(summary_rows)
-    save_pdf_and_png(fig_overlay_summary, OUT_PATH_OVERLAY_SUMMARY)
+    save_pdf(fig_overlay_summary, OUT_PATH_OVERLAY_SUMMARY)
     plt.close(fig_overlay_summary)
-
-    fig_depth = build_depth_figure(results)
-    save_pdf_and_png(fig_depth, OUT_PATH_DEPTH)
-    plt.close(fig_depth)
 
 
 if __name__ == "__main__":

@@ -22,7 +22,6 @@ RESP_WINDOW = (0.03, 0.12)  # SNR + effect tests + peak-window — single window
 PEAK_HALF_WINDOW_S = 0.015  # for peak-centered measurements
 
 QVAL_ALPHA = 0.05
-DEPTH_BIN_WIDTH_UM = 100.0
 
 # 12 Hz separates "low rate" from "high rate" in the rate-split scatters
 RATE_SPLIT_HZ = 12.0

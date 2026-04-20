@@ -31,7 +31,6 @@ from ephys.src.config.locomotion import (
     QVAL_ALPHA,
     RATE_SPLIT_HZ,
     RESP_WINDOW,
-    SNR_THRESHOLD,
 )
 from ephys.src.utils.utils_analysis import (
     build_trial_stim_classification,
@@ -615,14 +614,6 @@ def per_unit_move_vs_stat_stats(
     return delta, pvals, qvals, peak_latencies, stat_trials, move_trials
 
 
-def snr_per_unit(peth, bc, window=RESP_WINDOW):
-    mask = (bc >= window[0]) & (bc < window[1])
-    resp = peth[:, :, mask].mean(axis=2)
-    unit_mean = resp.mean(axis=1)
-    unit_sem = resp.std(axis=1) / np.sqrt(resp.shape[1])
-    return unit_mean / (unit_sem + 1e-3)
-
-
 def split_resp_per_unit(spike_times, stat_times, move_times, bc):
     if len(stat_times) == 0 or len(move_times) == 0:
         empty = np.array([])
@@ -847,19 +838,16 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
         f"{wilcox_str(pk_stat_all, pk_move_all, gate_mask=above_bl)}"
     )
 
-    snr_s = snr_per_unit(peth_stat_all, bc)
-    snr_m = snr_per_unit(peth_move_all, bc)
     delta_move, _, qvals_move, peak_latencies, stat_trial_matrix, move_trial_matrix = (
         per_unit_move_vs_stat_stats(peth_stat_all, peth_move_all, bc)
     )
-    good_snr_both = (snr_s >= SNR_THRESHOLD) & (snr_m >= SNR_THRESHOLD)
-    good_idx = np.where(good_snr_both)[0]
-    sig_exc = (qvals_move < QVAL_ALPHA) & (delta_move > 0) & good_snr_both
-    sig_supp = (qvals_move < QVAL_ALPHA) & (delta_move < 0) & good_snr_both
-    nonsig = (~sig_exc) & (~sig_supp) & good_snr_both
+    good_idx = np.arange(len(inputs.unit_ids))
+    sig_exc = (qvals_move < QVAL_ALPHA) & (delta_move > 0)
+    sig_supp = (qvals_move < QVAL_ALPHA) & (delta_move < 0)
+    nonsig = (~sig_exc) & (~sig_supp)
     print(
         "  Move-vs-stat peak-centered classes "
-        f"(FDR<0.05, SNR-both): exc={sig_exc.sum()}  "
+        f"(FDR<0.05): exc={sig_exc.sum()}  "
         f"supp={sig_supp.sum()}  no-effect={nonsig.sum()}"
     )
 

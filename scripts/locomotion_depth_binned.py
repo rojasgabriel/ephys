@@ -22,7 +22,6 @@ from ephys.src.config.locomotion import (
     PETH_KWARGS,
     QVAL_ALPHA,
     RESP_WINDOW,
-    SNR_THRESHOLD,
 )
 from ephys.src.utils.utils_IO import (
     fetch_good_units_with_depth,
@@ -52,15 +51,6 @@ def baseline_per_unit(peth, bc, window=BASELINE_WINDOW):
     """Mean firing rate in the baseline window, averaged across trials. Returns sp/s."""
     mask = (bc >= window[0]) & (bc < window[1])
     return peth[:, :, mask].mean(axis=(1, 2))
-
-
-def snr_per_unit(peth, bc, window=RESP_WINDOW):
-    """Per-unit response SNR using trial-wise response-window means."""
-    mask = (bc >= window[0]) & (bc < window[1])
-    resp = peth[:, :, mask].mean(axis=2)  # (n_units, n_trials)
-    unit_mean = resp.mean(axis=1)
-    unit_sem = resp.std(axis=1) / np.sqrt(resp.shape[1])
-    return unit_mean / (unit_sem + 1e-3)
 
 
 def per_unit_move_vs_stat_stats(
@@ -161,32 +151,29 @@ bl_move_all = baseline_per_unit(peth_move_all, bc)
 delta_stat_bl = pk_stat_all - bl_stat_all  # response above baseline (stat trials)
 delta_move_bl = pk_move_all - bl_move_all  # response above baseline (move trials)
 
-snr_s = snr_per_unit(peth_stat_all, bc)
-snr_m = snr_per_unit(peth_move_all, bc)
 delta_move, _, qvals_move, peak_latencies = per_unit_move_vs_stat_stats(
     peth_stat_all, peth_move_all, bc
 )
 
-good_snr_both = (snr_s >= SNR_THRESHOLD) & (snr_m >= SNR_THRESHOLD)
 # Soft gate: at least one condition must show response above baseline.
 # Otherwise the unit is suppressed in both — "less suppressed in move" is not
 # a meaningful "enhancement" claim.
 above_bl_either = (delta_stat_bl > 0) | (delta_move_bl > 0)
-analyzable = good_snr_both & above_bl_either
+analyzable = above_bl_either
 
 sig_exc = (qvals_move < QVAL_ALPHA) & (delta_move > 0) & analyzable
 sig_supp = (qvals_move < QVAL_ALPHA) & (delta_move < 0) & analyzable
 nonsig = (~sig_exc) & (~sig_supp) & analyzable
 
-n_dropped_below_bl = (good_snr_both & ~above_bl_either).sum()
+n_dropped_below_bl = (~above_bl_either).sum()
 print(
-    f"  Class counts (SNR-both, q<{QVAL_ALPHA:.2f}, above-baseline-gate): "
+    f"  Class counts (q<{QVAL_ALPHA:.2f}, above-baseline-gate): "
     f"exc={sig_exc.sum()}  supp={sig_supp.sum()}  no-effect={nonsig.sum()}"
 )
 if n_dropped_below_bl > 0:
     print(
-        f"  Dropped {n_dropped_below_bl} units that passed SNR but were below "
-        f"baseline in both stat and move conditions."
+        f"  Dropped {n_dropped_below_bl} units below baseline in both "
+        f"stat and move conditions."
     )
 
 edges, centers = build_depth_bins(depth_um, width_um=DEPTH_BIN_WIDTH_UM)
@@ -313,7 +300,7 @@ ax.set_title("Median locomotion effect by depth (IQR)", fontsize=11)
 fig.suptitle(
     (
         f"{subject} {session} — depth-binned locomotion modulation\n"
-        f"(q<{QVAL_ALPHA:.2f}, SNR-both≥{SNR_THRESHOLD:.1f}, "
+        f"(q<{QVAL_ALPHA:.2f}, above-baseline gate, "
         f"bin={int(DEPTH_BIN_WIDTH_UM)} µm)"
     ),
     fontsize=11,

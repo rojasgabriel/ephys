@@ -21,7 +21,6 @@ BASELINE_WINDOW = (-0.04, 0.0)
 RESP_WINDOW = (0.03, 0.12)  # SNR + effect tests + peak-window — single window
 PEAK_HALF_WINDOW_S = 0.015  # for peak-centered measurements
 
-SNR_THRESHOLD = 3.0
 QVAL_ALPHA = 0.05
 DEPTH_BIN_WIDTH_UM = 100.0
 

@@ -213,11 +213,13 @@ def make_grid(session_data):
     """session_data: list of dicts with keys subject, session, df."""
     ncols = len(session_data)
     fig, axes = plt.subplots(
-        2,
+        1,
         ncols,
-        figsize=(4.5 * ncols, 8),
+        figsize=(4.5 * ncols, 4.5),
         constrained_layout=True,
     )
+    if ncols == 1:
+        axes = [axes]
 
     for col, sd in enumerate(session_data):
         df = sd["df"]
@@ -228,8 +230,7 @@ def make_grid(session_data):
 
         col_title = f"{subj}  {sess[:8]}\nn={len(df)}  dp={int(df['is_double'].sum())}"
 
-        # --- Row 0: firing rate vs spike duration ---
-        ax = axes[0, col]
+        ax = axes[col]
         ax.scatter(
             other["spike_duration_ms"],
             other["firing_rate"],
@@ -257,128 +258,9 @@ def make_grid(session_data):
         ax.legend(frameon=False, fontsize=8, loc="upper right")
         ax.tick_params(labelsize=8)
 
-        # --- Row 1: depth vs spike duration ---
-        ax = axes[1, col]
-        ax.scatter(
-            other["spike_duration_ms"],
-            other["depth"],
-            s=14,
-            alpha=0.40,
-            color=COL_OTHER,
-            rasterized=True,
-            label=f"other (n={len(other)})",
-        )
-        ax.scatter(
-            double["spike_duration_ms"],
-            double["depth"],
-            s=28,
-            alpha=0.90,
-            color=COL_DOUBLE,
-            zorder=3,
-            edgecolors="k",
-            linewidths=0.3,
-            label=f"double-peak (n={len(double)})",
-        )
-        ax.axvline(NARROW_BROAD_MS, color="k", lw=0.7, ls="--", alpha=0.6)
-        ax.set_xlabel("Spike duration (ms)", fontsize=9)
-        ax.set_ylabel("Depth (µm)", fontsize=9)
-        ax.tick_params(labelsize=8)
-        ax.legend(frameon=False, fontsize=8, loc="upper right")
-
-    # Row labels
-    axes[0, 0].annotate(
-        "firing rate\nvs waveform width",
-        xy=(-0.35, 0.5),
-        xycoords="axes fraction",
-        ha="center",
-        va="center",
-        fontsize=9,
-        rotation=90,
-    )
-    axes[1, 0].annotate(
-        "depth\nvs waveform width",
-        xy=(-0.35, 0.5),
-        xycoords="axes fraction",
-        ha="center",
-        va="center",
-        fontsize=9,
-        rotation=90,
-    )
-
     fig.suptitle(
         "Double-peak unit waveform profile  ·  all good units shown  ·  "
         f"FS/RS boundary = {NARROW_BROAD_MS} ms",
-        fontsize=10,
-    )
-    return fig
-
-
-# ---------------------------------------------------------------------------
-# Pooled figure
-# ---------------------------------------------------------------------------
-
-
-def make_pooled(session_data):
-    """1×2 figure pooling all sessions; same two scatter types."""
-    df = pd.concat([sd["df"] for sd in session_data], ignore_index=True)
-    other = df[~df["is_double"]]
-    double = df[df["is_double"]]
-
-    subjects = ", ".join(dict.fromkeys(sd["subject"] for sd in session_data))
-    n_sessions = len(session_data)
-
-    fig, axes = plt.subplots(1, 2, figsize=(9, 4.5), constrained_layout=True)
-
-    scatter_kw_other = dict(s=14, alpha=0.35, color=COL_OTHER, rasterized=True)
-    scatter_kw_double = dict(
-        s=28, alpha=0.90, color=COL_DOUBLE, zorder=3, edgecolors="k", linewidths=0.3
-    )
-
-    # Panel 0: FR vs spike duration
-    ax = axes[0]
-    ax.scatter(
-        other["spike_duration_ms"],
-        other["firing_rate"],
-        **scatter_kw_other,
-        label=f"other (n={len(other)})",
-    )
-    ax.scatter(
-        double["spike_duration_ms"],
-        double["firing_rate"],
-        **scatter_kw_double,
-        label=f"double-peak (n={len(double)})",
-    )
-    ax.axvline(NARROW_BROAD_MS, color="k", lw=0.7, ls="--", alpha=0.6)
-    ax.set_xlabel("Spike duration (ms)", fontsize=10)
-    ax.set_ylabel("Firing rate (sp/s)", fontsize=10)
-    ax.set_title("Firing rate vs waveform width", fontsize=10)
-    ax.legend(frameon=False, fontsize=9, loc="upper right")
-    ax.tick_params(labelsize=9)
-
-    # Panel 1: depth vs spike duration
-    ax = axes[1]
-    ax.scatter(
-        other["spike_duration_ms"],
-        other["depth"],
-        **scatter_kw_other,
-        label=f"other (n={len(other)})",
-    )
-    ax.scatter(
-        double["spike_duration_ms"],
-        double["depth"],
-        **scatter_kw_double,
-        label=f"double-peak (n={len(double)})",
-    )
-    ax.axvline(NARROW_BROAD_MS, color="k", lw=0.7, ls="--", alpha=0.6)
-    ax.set_xlabel("Spike duration (ms)", fontsize=10)
-    ax.set_ylabel("Depth (µm)", fontsize=10)
-    ax.set_title("Depth vs waveform width", fontsize=10)
-    ax.legend(frameon=False, fontsize=9, loc="upper right")
-    ax.tick_params(labelsize=9)
-
-    fig.suptitle(
-        f"Pooled  ·  {subjects}  ·  {n_sessions} sessions  ·  "
-        f"all good units  ·  FS/RS boundary = {NARROW_BROAD_MS} ms",
         fontsize=10,
     )
     return fig

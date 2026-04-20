@@ -1,6 +1,7 @@
 """Depth and waveform-width breakdown of double-peak V1 units.
 
-Produces figures/double_peak/depth_waveform_breakdown.pdf
+Sessions in current scope: GRB058 20260312 only.
+(GRB059 and GRB060 are not in the current analysis scope.)
 
 History of analyses sent to Marsa Taheri (Slack, Churchland Lab):
   Dec 12 2025 — firing_rate vs spike_duration scatter, colored by is_double.
@@ -15,8 +16,8 @@ History of analyses sent to Marsa Taheri (Slack, Churchland Lab):
     corresponding to shallower cortex closer to L4 (first recipient of LGN input).
     Gabriel confirmed: higher numeric depth = closer to pia / shallower.
 
-This script packages both analyses into a per-session figure (5 panels) plus a
-pooled cross-session summary, covering GRB058 × 2 sessions, GRB059, GRB060.
+Classification uses canonical params from src/config/double_peak.py
+(FDR selectivity + 5 sp/s height floor on both peaks).
 
 Figure layout per session (5 panels):
   A. Scatter: firing_rate (y) vs spike_duration (x), colored by is_double
@@ -59,6 +60,13 @@ from labdata.schema import (
     UnitMetrics,
 )
 
+from ephys.src.config.double_peak import (
+    BASELINE_WINDOW,
+    MIN_PEAK_HEIGHT_ABS,
+    PEAK_KWARGS,
+    PETH_KWARGS,
+    SELECTIVITY_KWARGS,
+)
 from ephys.src.utils.utils_IO import fetch_session_events
 from ephys.src.utils.utils_analysis import (
     classify_peak_count,
@@ -70,42 +78,14 @@ from ephys.src.utils.utils_analysis import (
 # Configuration
 # ---------------------------------------------------------------------------
 SESSIONS = [
-    ("GRB058", "20260224_152424"),
-    ("GRB059", "20260319_142123"),
-    ("GRB060", "20260319_151909"),
+    ("GRB058", "20260312_134952"),
 ]
 
 FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/double_peak")
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 
 UNIT_CRITERIA_ID = 1
-
-PETH_KWARGS = dict(
-    pre_seconds=0.1,
-    post_seconds=0.15,
-    binwidth_ms=10,
-    t_rise=None,
-    t_decay=None,
-)
-SELECTIVITY_KWARGS = dict(
-    base_window=(-0.04, 0.0),
-    resp_window=(0.02, 0.10),
-    test="wilcoxon",
-    correction="fdr_bh",
-    alpha=0.05,
-)
-PEAK_KWARGS = dict(
-    search_window=(0.0, 0.15),
-    baseline_window=(-0.04, 0.0),
-    min_prominence_frac=0.25,
-    min_distance_ms=20.0,
-    binwidth_ms=10.0,
-)
-
-# Narrow/broad waveform cutoff (ms); label only, not hard split
-NARROW_BROAD_MS = 0.4
-
-# Depth histogram bin width (µm)
+NARROW_BROAD_MS = 0.4  # FS/RS boundary, visual reference only
 DEPTH_BIN_UM = 100.0
 
 # Colours — consistent with Slack plots
@@ -192,7 +172,14 @@ def _add_double_peak_labels(df: pd.DataFrame, align_ev: dict) -> pd.DataFrame:
         exc_peth, bin_centers, unit_ids=exc_ids, **PEAK_KWARGS
     )
 
-    double_ids = set(int(u) for u in peaks_df.loc[peaks_df["n_peaks"] == 2, "unit"])
+    bl_mask = (bin_centers >= BASELINE_WINDOW[0]) & (bin_centers < BASELINE_WINDOW[1])
+    double_ids: set[int] = set()
+    for _, row in peaks_df.loc[peaks_df["n_peaks"] == 2].iterrows():
+        uid = int(row["unit"])
+        i = exc_ids.index(uid)
+        bl = exc_peth[i].mean(axis=0)[bl_mask].mean()
+        if min(float(h) - bl for h in row["peak_heights"]) >= MIN_PEAK_HEIGHT_ABS:
+            double_ids.add(uid)
 
     df["is_excited"] = df["unit_id"].isin(set(exc_ids))
     df["is_double"] = df["unit_id"].isin(double_ids)

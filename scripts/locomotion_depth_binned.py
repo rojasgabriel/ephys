@@ -15,6 +15,15 @@ import matplotlib.pyplot as plt
 from scipy.stats import wilcoxon
 from statsmodels.stats.multitest import multipletests
 
+from ephys.src.config.locomotion import (
+    BASELINE_WINDOW,
+    DEPTH_BIN_WIDTH_UM,
+    PEAK_HALF_WINDOW_S,
+    PETH_KWARGS,
+    QVAL_ALPHA,
+    RESP_WINDOW,
+    SNR_THRESHOLD,
+)
 from ephys.src.utils.utils_IO import (
     fetch_good_units_with_depth,
     fetch_session_events,
@@ -27,7 +36,7 @@ from ephys.src.utils.utils_analysis import (
 )
 
 subject = "GRB058"
-session = "20260224_152424"
+session = "20260312_134952"
 FIGURE_DIR = (
     Path("/Users/gabriel/lib/ephys/figures/locomotion_depth")
     / f"{subject}_{session[:8]}"
@@ -35,21 +44,15 @@ FIGURE_DIR = (
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 OUT_PATH = FIGURE_DIR / "depth_binned.pdf"
 
-PETH_KWARGS = dict(
-    pre_seconds=0.04,
-    post_seconds=0.15,
-    binwidth_ms=10,
-)
-RESP_WINDOW = (0.04, 0.10)
-EFFECT_WINDOW = (0.0, 0.12)
-PEAK_HALF_WINDOW_S = 0.015
-SNR_THRESHOLD = 3.0
-QVAL_ALPHA = 0.05
-DEPTH_BIN_WIDTH_UM = 100.0
-
 
 def resp_per_unit(peth, bc, window=RESP_WINDOW):
-    """Mean firing rate in the response window, averaged across trials."""
+    """Mean firing rate in the response window, averaged across trials. Returns sp/s."""
+    mask = (bc >= window[0]) & (bc < window[1])
+    return peth[:, :, mask].mean(axis=(1, 2))
+
+
+def baseline_per_unit(peth, bc, window=BASELINE_WINDOW):
+    """Mean firing rate in the baseline window, averaged across trials. Returns sp/s."""
     mask = (bc >= window[0]) & (bc < window[1])
     return peth[:, :, mask].mean(axis=(1, 2))
 
@@ -67,13 +70,13 @@ def per_unit_move_vs_stat_stats(
     peth_stat,
     peth_move,
     bc,
-    window=EFFECT_WINDOW,
+    window=RESP_WINDOW,
     half_window_s=PEAK_HALF_WINDOW_S,
 ):
     """Per-unit paired stats across trials for movement vs stationary response."""
     effect_mask = (bc >= window[0]) & (bc < window[1])
     if not effect_mask.any():
-        raise ValueError("EFFECT_WINDOW does not overlap available bins.")
+        raise ValueError("RESP_WINDOW does not overlap available bins.")
 
     n_units, n_trials, _ = peth_stat.shape
     stat_trials = np.zeros((n_units, n_trials), dtype=float)
@@ -156,6 +159,11 @@ peth_move_all, _, _ = compute_population_peth(
 )
 pk_stat_all = resp_per_unit(peth_stat_all, bc)
 pk_move_all = resp_per_unit(peth_move_all, bc)
+bl_stat_all = baseline_per_unit(peth_stat_all, bc)
+bl_move_all = baseline_per_unit(peth_move_all, bc)
+delta_stat_bl = pk_stat_all - bl_stat_all  # response above baseline (stat trials)
+delta_move_bl = pk_move_all - bl_move_all  # response above baseline (move trials)
+
 snr_s = snr_per_unit(peth_stat_all, bc)
 snr_m = snr_per_unit(peth_move_all, bc)
 delta_move, _, qvals_move, peak_latencies = per_unit_move_vs_stat_stats(
@@ -163,20 +171,32 @@ delta_move, _, qvals_move, peak_latencies = per_unit_move_vs_stat_stats(
 )
 
 good_snr_both = (snr_s >= SNR_THRESHOLD) & (snr_m >= SNR_THRESHOLD)
-sig_exc = (qvals_move < QVAL_ALPHA) & (delta_move > 0) & good_snr_both
-sig_supp = (qvals_move < QVAL_ALPHA) & (delta_move < 0) & good_snr_both
-nonsig = (~sig_exc) & (~sig_supp) & good_snr_both
+# Soft gate: at least one condition must show response above baseline.
+# Otherwise the unit is suppressed in both — "less suppressed in move" is not
+# a meaningful "enhancement" claim.
+above_bl_either = (delta_stat_bl > 0) | (delta_move_bl > 0)
+analyzable = good_snr_both & above_bl_either
 
+sig_exc = (qvals_move < QVAL_ALPHA) & (delta_move > 0) & analyzable
+sig_supp = (qvals_move < QVAL_ALPHA) & (delta_move < 0) & analyzable
+nonsig = (~sig_exc) & (~sig_supp) & analyzable
+
+n_dropped_below_bl = (good_snr_both & ~above_bl_either).sum()
 print(
-    f"  Class counts (SNR-both, q<{QVAL_ALPHA:.2f}): "
+    f"  Class counts (SNR-both, q<{QVAL_ALPHA:.2f}, above-baseline-gate): "
     f"exc={sig_exc.sum()}  supp={sig_supp.sum()}  no-effect={nonsig.sum()}"
 )
+if n_dropped_below_bl > 0:
+    print(
+        f"  Dropped {n_dropped_below_bl} units that passed SNR but were below "
+        f"baseline in both stat and move conditions."
+    )
 
 edges, centers = build_depth_bins(depth_um, width_um=DEPTH_BIN_WIDTH_UM)
 bin_idx = np.digitize(depth_um, edges) - 1
 bin_idx = np.clip(bin_idx, 0, len(centers) - 1)
 
-valid_mask = good_snr_both
+valid_mask = analyzable
 n_bins = len(centers)
 count_total = np.zeros(n_bins, dtype=int)
 count_exc = np.zeros(n_bins, dtype=int)

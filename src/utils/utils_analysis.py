@@ -18,17 +18,29 @@ def compute_population_peth(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compute population PETH aligned to event times.
 
+    The returned `peth` is in **sp/s** (firing rate), NOT counts. The raw
+    counts from spks.population_peth are divided by binwidth_ms/1000 before
+    returning. DO NOT re-divide downstream. A runtime assertion catches
+    accidental re-scaling (values > 5000 sp/s are implausible for V1).
+
+    WARNING on kernel behaviour: the alpha-function kernel built with
+    `t_decay=0.025s` (a common default elsewhere) merges temporal features
+    30-45 ms apart. For double-peak detection or any fine temporal analysis,
+    pass `t_rise=None, t_decay=None` to disable smoothing entirely.
+
     Args:
         spike_times_per_unit: list/sequence of arrays, one per unit (seconds).
         alignment_times: array of event times to align to (seconds).
         pre_seconds: time before event.
         post_seconds: time after event.
         binwidth_ms: bin width in milliseconds.
-        t_rise: alpha-function rise time (seconds). If None, no smoothing.
-        t_decay: alpha-function decay time (seconds). If None, no smoothing.
+        t_rise: alpha-function rise time (seconds). Pass None to disable.
+        t_decay: alpha-function decay time (seconds). Pass None to disable.
+            Both t_rise and t_decay must be None OR both non-None; passing
+            only one is treated as disabled.
 
     Returns:
-        peth: array (n_units, n_trials, n_timebins)
+        peth: array (n_units, n_trials, n_timebins) in **sp/s**
         bin_edges: array (n_timebins + 1,) in seconds relative to event
         bin_centers: array (n_timebins,) in seconds relative to event
     """
@@ -54,6 +66,14 @@ def compute_population_peth(
     )
     # Convert spike counts per bin to firing rate (sp/s)
     peth = peth / (binwidth_ms / 1000.0)
+    # Sanity guard: peth should be in sp/s. Values > 5000 sp/s are implausible
+    # for V1 and usually indicate the raw counts were passed through already.
+    if peth.size > 0 and peth.max() > 5000:
+        raise AssertionError(
+            f"peth.max()={peth.max():.1f} sp/s — implausibly high. "
+            "Did you accidentally pass counts instead of spike times, or "
+            "re-scale the PETH downstream?"
+        )
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
     return peth, bin_edges, bin_centers
 
@@ -67,11 +87,22 @@ def compute_unit_selectivity(
     test: str = "wilcoxon",
     correction: str = "fdr_bh",
     alpha: float = 0.05,
+    min_delta_abs: Optional[float] = None,
 ) -> tuple[pd.DataFrame, dict[str, np.ndarray]]:
     """Compute baseline vs response selectivity per unit.
 
+    The test compares **per-trial mean rates** in the response window to
+    per-trial mean rates in the baseline window (paired). This is NOT a
+    per-bin test — time structure within the window is collapsed.
+
+    Statistical significance is NOT the same as biological magnitude. With
+    enough trials, a mean difference of 1 sp/s can pass at q<0.05. If you
+    need a magnitude floor, pass `min_delta_abs` — units with
+    |delta| < min_delta_abs will NOT be marked excited/suppressed even if
+    the Wilcoxon is significant.
+
     Args:
-        peth: array (n_units, n_trials, n_timepoints) of firing rates (spk/s)
+        peth: array (n_units, n_trials, n_timepoints) of firing rates (sp/s)
         bin_edges: array (n_timepoints + 1,) of bin edges in seconds relative to event
         unit_ids: sequence of unit IDs matching peth's first axis
         base_window: (start, end) seconds for baseline
@@ -81,6 +112,10 @@ def compute_unit_selectivity(
             statsmodels.stats.multitest.multipletests, e.g. 'fdr_bh'
             (Benjamini-Hochberg, default) or 'bonferroni'.
         alpha: significance threshold applied to corrected p-values
+        min_delta_abs: optional minimum |mean response - mean baseline|
+            threshold (sp/s). Units below this are excluded from the
+            excited/suppressed masks even if statistically significant.
+            Default None = no magnitude filter.
 
     Returns:
         results_df: DataFrame with per-unit stats
@@ -138,6 +173,10 @@ def compute_unit_selectivity(
 
     excited = (qvals < alpha) & (deltas > 0)
     suppressed = (qvals < alpha) & (deltas < 0)
+    if min_delta_abs is not None:
+        magnitude_mask = np.abs(deltas) >= min_delta_abs
+        excited &= magnitude_mask
+        suppressed &= magnitude_mask
     selective_any = excited | suppressed
 
     results_df = pd.DataFrame(
@@ -213,19 +252,35 @@ def classify_peak_count(
 
     base_mask = (bin_centers >= baseline_window[0]) & (bin_centers < baseline_window[1])
     search_mask = (bin_centers >= search_window[0]) & (bin_centers < search_window[1])
-    search_centers = bin_centers[search_mask]
+    search_idx = np.where(search_mask)[0]
+    if len(search_idx) == 0:
+        raise ValueError("search_window does not overlap available bins.")
+    # Pad by 1 bin on each side so scipy.signal.find_peaks can detect a peak
+    # that sits AT the search-window boundary (find_peaks needs both neighbors
+    # strictly lower — a bin at the edge of a sliced signal has no neighbor).
+    pad_lo = max(0, search_idx[0] - 1)
+    pad_hi = min(len(bin_centers), search_idx[-1] + 2)
+    padded_mask = np.zeros_like(search_mask, dtype=bool)
+    padded_mask[pad_lo:pad_hi] = True
+    padded_centers = bin_centers[padded_mask]
+    # Offsets from the start of the padded slice to the user-requested window
+    offset_lo = search_idx[0] - pad_lo
+    offset_hi = offset_lo + len(search_idx)
+
     dist_bins = max(1, int(round(min_distance_ms / binwidth_ms)))
 
     records = []
     for u in range(n_units):
         mean_psth = peth[u].mean(axis=0)
         baseline_mean = mean_psth[base_mask].mean() if base_mask.any() else 0.0
-        excess = mean_psth[search_mask] - baseline_mean
+        padded_excess = mean_psth[padded_mask] - baseline_mean
 
         # In dips mode, invert so troughs become peaks for find_peaks
-        signal = -excess if mode == "dips" else excess
+        padded_signal = -padded_excess if mode == "dips" else padded_excess
 
-        max_signal = signal.max()
+        # Prominence is computed on the full padded signal (not the sliced one)
+        # so the threshold is stable across boundary bins.
+        max_signal = padded_signal.max()
         if max_signal <= 0:
             records.append(
                 dict(unit=unit_ids[u], n_peaks=0, peak_times=[], peak_heights=[])
@@ -233,37 +288,49 @@ def classify_peak_count(
             continue
 
         prom_thresh = max(min_prominence_frac * max_signal, min_prominence_abs)
-        detected, props = find_peaks(signal, prominence=prom_thresh, distance=dist_bins)
+        detected_padded, _ = find_peaks(
+            padded_signal, prominence=prom_thresh, distance=dist_bins
+        )
+
+        # Filter back to the user-requested search window
+        in_window = (detected_padded >= offset_lo) & (detected_padded < offset_hi)
+        detected_padded = detected_padded[in_window]
 
         # Only keep detections on the correct side of baseline
         if mode == "dips":
-            valid = excess[detected] < 0
+            valid = padded_excess[detected_padded] < 0
         else:
-            valid = excess[detected] > 0
-        detected = detected[valid]
+            valid = padded_excess[detected_padded] > 0
+        detected_padded = detected_padded[valid]
 
-        peak_times = search_centers[detected].tolist()
-        peak_heights = (mean_psth[search_mask][detected]).tolist()
+        peak_times = padded_centers[detected_padded].tolist()
+        peak_heights = (mean_psth[padded_mask][detected_padded]).tolist()
 
-        # Fallback: if no peaks survived but there IS a clear excursion,
-        # assign 1 peak at argmax (catches broad plateaus).
-        if len(detected) == 0 and max_signal > 0:
-            best = int(np.argmax(signal))
-            peak_times = [float(search_centers[best])]
-            peak_heights = [float(mean_psth[search_mask][best])]
-            records.append(
-                dict(
-                    unit=unit_ids[u],
-                    n_peaks=1,
-                    peak_times=peak_times,
-                    peak_heights=peak_heights,
+        # Fallback: if no peaks survived but there IS a clear excursion
+        # within the user-requested window, assign 1 peak at argmax there.
+        if len(detected_padded) == 0 and max_signal > 0:
+            window_signal = padded_signal[offset_lo:offset_hi]
+            if window_signal.size and window_signal.max() > 0:
+                best_in_window = int(np.argmax(window_signal)) + offset_lo
+                peak_times = [float(padded_centers[best_in_window])]
+                peak_heights = [float(mean_psth[padded_mask][best_in_window])]
+                records.append(
+                    dict(
+                        unit=unit_ids[u],
+                        n_peaks=1,
+                        peak_times=peak_times,
+                        peak_heights=peak_heights,
+                    )
                 )
-            )
+            else:
+                records.append(
+                    dict(unit=unit_ids[u], n_peaks=0, peak_times=[], peak_heights=[])
+                )
         else:
             records.append(
                 dict(
                     unit=unit_ids[u],
-                    n_peaks=len(detected),
+                    n_peaks=len(detected_padded),
                     peak_times=peak_times,
                     peak_heights=peak_heights,
                 )

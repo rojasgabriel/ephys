@@ -1,16 +1,22 @@
-"""Compact 2×3 scatter grid: waveform metrics of double-peak units.
+"""Compact 2-column scatter grid: waveform metrics of double-peak units.
+
+Sessions: GRB006 20240821 + GRB058 20260312.
 
 Layout
 ------
-         GRB006 20240821  |  GRB058 20260312  |  GRB058 20260319
-Row 0:   FR vs spike_dur  |  FR vs spike_dur  |  FR vs spike_dur
-Row 1:   depth vs spike_dur | depth vs spike_dur | depth vs spike_dur
+         GRB006 20240821     |  GRB058 20260312
+Row 0:   FR vs spike_dur     |  FR vs spike_dur
+Row 1:   depth vs spike_dur  |  depth vs spike_dur
 
 All good units shown (not just excited). Double-peak units in orange,
-all others in blue. FS/RS boundary line at 0.4 ms.
+all others in blue. FS/RS boundary line at 0.4 ms (visual reference only).
+
+Classification uses canonical params from src/config/double_peak.py
+(FDR selectivity + 5 sp/s height floor on both peaks).
 
 GRB006 event loading uses local trial_ts.pkl (DB events not available).
-GRB058 sessions are fully DB-backed.
+GRB006 spike times use local KS4 pkl (DB spike times stale).
+GRB058 is fully DB-backed.
 
 Output
 ------
@@ -29,6 +35,13 @@ import pandas as pd
 from labdata.schema import EphysRecording, SpikeSorting, UnitCount, UnitMetrics
 from matplotlib.backends.backend_pdf import PdfPages
 
+from ephys.src.config.double_peak import (
+    BASELINE_WINDOW,
+    MIN_PEAK_HEIGHT_ABS,
+    PEAK_KWARGS,
+    PETH_KWARGS,
+    SELECTIVITY_KWARGS,
+)
 from ephys.src.utils.utils_IO import fetch_session_events
 from ephys.src.utils.utils_analysis import (
     classify_peak_count,
@@ -41,7 +54,7 @@ from ephys.src.utils.utils_analysis import (
 # ---------------------------------------------------------------------------
 SESSIONS = [
     ("GRB006", "20240821_121447"),
-    ("GRB058", "20260224_152424"),
+    ("GRB058", "20260312_134952"),
 ]
 
 # GRB006 local paths (DB spike times are stale; use KS4 local export instead)
@@ -63,29 +76,7 @@ OUT_PATH_POOLED = Path(
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 UNIT_CRITERIA_ID = 1
-
-PETH_KWARGS = dict(
-    pre_seconds=0.1,
-    post_seconds=0.15,
-    binwidth_ms=10,
-    t_rise=None,
-    t_decay=None,
-)
-PEAK_KWARGS = dict(
-    search_window=(0.0, 0.15),
-    baseline_window=(-0.04, 0.0),
-    min_prominence_frac=0.25,
-    min_distance_ms=20.0,
-    binwidth_ms=10.0,
-)
-SELECTIVITY_KWARGS = dict(
-    base_window=(-0.04, 0.0),
-    resp_window=(0.02, 0.10),
-    test="wilcoxon",
-    correction="fdr_bh",
-    alpha=0.05,
-)
-NARROW_BROAD_MS = 0.4
+NARROW_BROAD_MS = 0.4  # FS/RS boundary, visual reference only
 
 COL_OTHER = "#4C72B0"
 COL_DOUBLE = "#DD8452"
@@ -172,12 +163,11 @@ def _get_first_stim(subject: str, session: str) -> np.ndarray:
 
 
 def _classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFrame:
-    """Classify double-peak units using FDR selectivity + prominence filter.
+    """Classify double-peak units using canonical pipeline.
 
-    Uses FDR correction with resp_window=(0.02, 0.10) to catch early-peaking
-    units (first peak before 60 ms) that Bonferroni + narrow window misses.
-    No absolute height floor — the selectivity gate already ensures the unit
-    has a statistically significant response.
+    See src/config/double_peak.py for parameter rationale.
+    Pipeline: FDR selectivity → prominence-based peak detection on excited
+    units → require both peaks ≥ MIN_PEAK_HEIGHT_ABS sp/s above baseline.
     """
     unit_ids = df["unit_id"].tolist()
     spike_times = df["spike_times_s"].tolist()
@@ -203,7 +193,14 @@ def _classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFr
         exc_peth, bin_centers, unit_ids=exc_ids, **PEAK_KWARGS
     )
 
-    double_ids = set(int(u) for u in peaks_df.loc[peaks_df["n_peaks"] == 2, "unit"])
+    bl_mask = (bin_centers >= BASELINE_WINDOW[0]) & (bin_centers < BASELINE_WINDOW[1])
+    double_ids: set[int] = set()
+    for _, row in peaks_df.loc[peaks_df["n_peaks"] == 2].iterrows():
+        uid = int(row["unit"])
+        i = exc_ids.index(uid)
+        bl = exc_peth[i].mean(axis=0)[bl_mask].mean()
+        if min(float(h) - bl for h in row["peak_heights"]) >= MIN_PEAK_HEIGHT_ABS:
+            double_ids.add(uid)
 
     df["is_double"] = df["unit_id"].isin(double_ids)
     if double_ids:

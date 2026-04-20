@@ -1,72 +1,40 @@
-"""Double-peak PSTH figure for the Dario email.
+"""Double-peak PSTH figure for the Dario email (legacy version).
 
-Produces figures/double_peak_dario.pdf — a single landscape page.
+This script predates dario_double_peak_story.py. Kept for the 15ms vs 30ms
+pulse-split visualization (the "second peak does NOT shift with pulse width"
+finding). For the canonical Dario story figure see dario_double_peak_story.py.
 
-Layout: two rows, three columns.
-  • Top row — single-peak reference examples (one per animal, 15 ms only):
-    best single-peak excited unit from each of GRB058, GRB059, GRB060,
-    chosen by largest response amplitude above baseline.
-  • Bottom row — double-peak units (GRB058 only, 15 ms + 30 ms overlaid):
-    units 410 and 651 (3/12), 515 (3/19).
+Sessions in current scope: GRB058 only (longstim sessions for 15 vs 30 ms).
+GRB059 and GRB060 are not in the current analysis scope.
 
-Double-peak criterion: excited by Wilcoxon test, exactly two peaks detected
-by classify_peak_count (min_prominence_frac=0.25, min_distance=20 ms), AND
-both peaks ≥ 20 sp/s above pre-stimulus baseline.  This floor removes low-SNR
-cases (e.g. GRB060 unit 248, whose peaks were only 11–13 sp/s above baseline
-with the second peak larger than the first — not a typical on-response shape).
+Layout: two rows.
+  • Top row — single-peak reference example from GRB058.
+  • Bottom row — double-peak units (GRB058, 15 ms + 30 ms overlaid).
 
-GRB059: no double-peak units detected (0/4 excited units qualify).
-GRB060: unit 248 passes the two-peak shape test but fails the 20 sp/s floor.
-Both are absent from the figure; mention in the email.
-GRB006 (~11/150 double-peak units, different recording hardware): referenced
-in the email text; the nidq event pipeline is not yet ported.
-
-Anne's guidance (2026-04-02): keep it simple — show examples with and without
-long pulses; describe the stimulus; ask whether this response shape is known.
+Classification uses canonical params from src/config/double_peak.py
+(FDR selectivity + 5 sp/s height floor on both peaks).
 """
 
-import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.backends.backend_pdf import PdfPages
 
 matplotlib.use("Agg")
 
+from ephys.src.config.double_peak import (
+    BASELINE_WINDOW,
+    MIN_PEAK_HEIGHT_ABS,
+    PEAK_KWARGS,
+    PETH_KWARGS,
+    SELECTIVITY_KWARGS,
+)
 from ephys.src.utils.utils_IO import fetch_good_units, fetch_session_events
 from ephys.src.utils.utils_analysis import (
+    classify_peak_count,
     compute_population_peth,
     compute_unit_selectivity,
-    classify_peak_count,
 )
-
-# ---------------------------------------------------------------------------
-# Parameters
-# ---------------------------------------------------------------------------
-PETH_KWARGS = dict(
-    pre_seconds=0.1,
-    post_seconds=0.15,
-    binwidth_ms=10,
-    t_rise=None,
-    t_decay=None,  # no smoothing — required to resolve peaks ~30 ms apart
-)
-SELECTIVITY_KWARGS = dict(
-    base_window=(-0.04, 0.0),
-    resp_window=(0.06, 0.10),
-    test="wilcoxon",
-    correction="bonferroni",
-    alpha=0.05,
-)
-PEAK_KWARGS = dict(
-    search_window=(0.0, 0.15),
-    baseline_window=(-0.04, 0.0),
-    min_prominence_frac=0.25,
-    min_distance_ms=20.0,
-    binwidth_ms=10.0,
-)
-
-# Post-hoc quality filter for double-peak classification.
-# Both peaks must exceed this height above pre-stimulus baseline (sp/s).
-MIN_PEAK_HEIGHT_ABS = 20.0
 
 GRB058_SESSIONS = ["20260312_134952", "20260319_131303"]
 OUT_PATH = "/Users/gabriel/lib/ephys/figures/double_peak_dario.pdf"
@@ -76,8 +44,8 @@ OUT_PATH = "/Users/gabriel/lib/ephys/figures/double_peak_dario.pdf"
 # Helper functions
 # ---------------------------------------------------------------------------
 def _baseline_mean(peth_trials, bin_centers):
-    """Mean firing rate over (-0.04, 0.0) s window, trial-averaged."""
-    mask = (bin_centers >= -0.04) & (bin_centers < 0.0)
+    """Mean firing rate over BASELINE_WINDOW, trial-averaged."""
+    mask = (bin_centers >= BASELINE_WINDOW[0]) & (bin_centers < BASELINE_WINDOW[1])
     return peth_trials.mean(axis=0)[mask].mean()
 
 
@@ -188,8 +156,6 @@ for session in GRB058_SESSIONS:
 # ---------------------------------------------------------------------------
 SP_ANIMAL_SESSIONS = [
     ("GRB058", "20260312_134952"),
-    ("GRB059", "20260319_142123"),
-    ("GRB060", "20260319_151909"),
 ]
 
 sp_rows = []
@@ -248,26 +214,34 @@ for subject, session in SP_ANIMAL_SESSIONS:
     print(f"\nSingle-peak reference  {subject}/{session[:8]}  unit={best}")
 
 # ---------------------------------------------------------------------------
-# Figure — 2 rows × 3 columns
+# Figure — 2 rows × N columns (N = number of double-peak units found)
+# Top row: GRB058 single-peak reference (one example, repeated empty otherwise)
+# Bottom row: double-peak units, 15 ms vs 30 ms overlaid
 # ---------------------------------------------------------------------------
-assert len(sp_rows) == len(dp_rows) == 3, "Expected 3 panels per row"
-fig, axes = plt.subplots(2, 3, figsize=(10.5, 7), sharey=False)
+ncols = max(len(dp_rows), 1)
+fig, axes = plt.subplots(
+    2, ncols, figsize=(3.5 * ncols, 7), sharey=False, squeeze=False
+)
 
-# ---- Top row: single-peak reference ----------------------------------------
-for col, row in enumerate(sp_rows):
+# ---- Top row: single-peak reference (only first cell used; others hidden) ---
+for col in range(ncols):
     ax = axes[0, col]
-    bc = row["bin_centers"]
-    plot_trace(ax, bc, row["peth_15"], "tab:gray", f"15 ms (n={row['n_tr_15']})")
-    mark_peaks(ax, row["peaks_df_row"], color="dimgray")
-    ax.axvline(0, color="gray", linestyle="--", linewidth=0.8)
-    ax.set_title(
-        f"{row['subject']}  unit {row['uid']}\n{row['session'][:8]}  (single peak)",
-        fontsize=8,
-    )
-    ax.set_ylabel("sp/s", fontsize=8)
-    ax.tick_params(labelsize=7)
-    if col == 0:
-        ax.set_xlabel("Time from stim onset (s)", fontsize=8)
+    if col < len(sp_rows):
+        row = sp_rows[col]
+        bc = row["bin_centers"]
+        plot_trace(ax, bc, row["peth_15"], "tab:gray", f"15 ms (n={row['n_tr_15']})")
+        mark_peaks(ax, row["peaks_df_row"], color="dimgray")
+        ax.axvline(0, color="gray", linestyle="--", linewidth=0.8)
+        ax.set_title(
+            f"{row['subject']}  unit {row['uid']}\n{row['session'][:8]}  (single peak)",
+            fontsize=8,
+        )
+        ax.set_ylabel("sp/s", fontsize=8)
+        ax.tick_params(labelsize=7)
+        if col == 0:
+            ax.set_xlabel("Time from stim onset (s)", fontsize=8)
+    else:
+        ax.axis("off")
 
 # ---- Bottom row: double-peak units -----------------------------------------
 for col, row in enumerate(dp_rows):
@@ -298,7 +272,7 @@ for col, row in enumerate(dp_rows):
 
 # Row labels on the left margin
 axes[0, 0].annotate(
-    "Single-peak\nexamples",
+    "Single-peak\nexample",
     xy=(-0.22, 0.5),
     xycoords="axes fraction",
     fontsize=8,

@@ -18,6 +18,13 @@ from matplotlib.backends.backend_pdf import PdfPages
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from ephys.src.config.double_peak import (
+    BASELINE_WINDOW,
+    MIN_PEAK_HEIGHT_ABS,
+    PEAK_KWARGS,
+    PETH_KWARGS,
+    SELECTIVITY_KWARGS,
+)
 from ephys.src.utils.utils_IO import (
     fetch_good_units,
     fetch_session_events,
@@ -62,29 +69,6 @@ FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/double_peak")
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 OUT_PATH = FIGURE_DIR / "dario_story.pdf"
 
-PETH_KWARGS = dict(
-    pre_seconds=0.1,
-    post_seconds=0.15,
-    binwidth_ms=10,
-    t_rise=None,
-    t_decay=None,
-)
-SELECTIVITY_KWARGS = dict(
-    base_window=(-0.04, 0.0),
-    resp_window=(0.06, 0.10),
-    test="wilcoxon",
-    correction="bonferroni",
-    alpha=0.05,
-)
-PEAK_KWARGS = dict(
-    search_window=(0.0, 0.15),
-    baseline_window=(-0.04, 0.0),
-    min_prominence_frac=0.25,
-    min_distance_ms=20.0,
-    binwidth_ms=10.0,
-)
-MIN_PEAK_HEIGHT_ABS = 20.0
-
 
 def resolve_grb006_spike_times_path() -> Path:
     for path in GRB006_SPIKE_TIMES_PATHS:
@@ -107,7 +91,7 @@ def load_local_spike_times(spike_times_path: Path, sampling_rate: float = 30000.
 
 
 def baseline_mean(peth_trials, bin_centers):
-    mask = (bin_centers >= -0.04) & (bin_centers < 0.0)
+    mask = (bin_centers >= BASELINE_WINDOW[0]) & (bin_centers < BASELINE_WINDOW[1])
     return peth_trials.mean(axis=0)[mask].mean()
 
 

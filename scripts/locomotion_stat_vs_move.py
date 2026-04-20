@@ -23,6 +23,16 @@ from statsmodels.stats.multitest import multipletests
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from ephys.src.config.locomotion import (
+    BASELINE_WINDOW,
+    DEPTH_BIN_WIDTH_UM,
+    PEAK_HALF_WINDOW_S,
+    PETH_KWARGS,
+    QVAL_ALPHA,
+    RATE_SPLIT_HZ,
+    RESP_WINDOW,
+    SNR_THRESHOLD,
+)
 from ephys.src.utils.utils_analysis import (
     build_trial_stim_classification,
     compute_population_peth,
@@ -30,22 +40,16 @@ from ephys.src.utils.utils_analysis import (
     find_unique_cross_trial_offset_pairs,
 )
 
+# RESP_WINDOW from config is the single window used for SNR + effect tests +
+# peak-centered measurements. The previous RESP_WINDOW=(0.0, 0.12) is now
+# unified with RESP_WINDOW.
+
 LOCAL_TRIAL_TS = Path("/Users/gabriel/Downloads/Organized/Code/trial_ts.pkl")
 LOCAL_SPIKE_TIMES = Path(
     "/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"
 )
-PETH_KWARGS = dict(
-    pre_seconds=0.04,
-    post_seconds=0.15,
-    binwidth_ms=10,
-)
-RESP_WINDOW = (0.04, 0.10)
-EFFECT_WINDOW = (0.0, 0.12)
-PEAK_HALF_WINDOW_S = 0.015
 CANONICAL_LATENCY_WINDOW = (0.015, 0.070)
 TITLE_KW = dict(fontsize=11, pad=3)
-RATE_SPLIT_HZ = 12.0
-DEPTH_BIN_WIDTH_UM = 100.0
 PNG_DPI = 300
 MAIN_ANCHOR_CONFIG = {
     "GRB006": {"stationary_index": 2},
@@ -500,8 +504,26 @@ def load_db_session(subject: str, session: str):
 
 
 def resp_per_unit(peth, bc, window=RESP_WINDOW):
+    """Mean firing rate (sp/s) in the response window, averaged across trials."""
     mask = (bc >= window[0]) & (bc < window[1])
     return peth[:, :, mask].mean(axis=(1, 2))
+
+
+def baseline_per_unit(peth, bc, window=BASELINE_WINDOW):
+    """Mean firing rate (sp/s) in the baseline window, averaged across trials."""
+    mask = (bc >= window[0]) & (bc < window[1])
+    return peth[:, :, mask].mean(axis=(1, 2))
+
+
+def above_baseline_mask(pk_stat, pk_move, bl_stat, bl_move):
+    """True for units with response > baseline in at least one condition.
+
+    Soft gate against the "suppressed in both, less suppressed in move →
+    falsely called enhanced" failure mode.
+    """
+    if len(pk_stat) == 0:
+        return np.array([], dtype=bool)
+    return (pk_stat - bl_stat > 0) | (pk_move - bl_move > 0)
 
 
 def resp_sem_log_per_unit(peth, bc, window=RESP_WINDOW):
@@ -517,24 +539,35 @@ def resp_sem_log_per_unit(peth, bc, window=RESP_WINDOW):
     return lower, upper
 
 
-def wilcox_str(a, b):
+def wilcox_str(a, b, gate_mask=None):
+    """Wilcoxon p + % above diagonal, optionally restricted by `gate_mask`.
+
+    `gate_mask` should be a boolean array of length len(a)/len(b). If provided,
+    only units where gate_mask=True are included (e.g. units above baseline).
+    """
     if len(a) == 0 or len(b) == 0:
         return "no trials"
+    if gate_mask is not None:
+        a = a[gate_mask]
+        b = b[gate_mask]
+        if len(a) == 0:
+            return "no units pass baseline gate"
     _, p = wilcoxon(a, b)
     pct = 100 * (b > a).mean()
-    return f"{pct:.0f}% above diag  p={p:.3f}"
+    median_delta = float(np.median(b - a))
+    return f"{pct:.0f}% above diag  Δmedian={median_delta:+.2f} sp/s  p={p:.3f}  n={len(a)}"
 
 
 def per_unit_move_vs_stat_stats(
     peth_stat,
     peth_move,
     bc,
-    window=EFFECT_WINDOW,
+    window=RESP_WINDOW,
     half_window_s=PEAK_HALF_WINDOW_S,
 ):
     effect_mask = (bc >= window[0]) & (bc < window[1])
     if not effect_mask.any():
-        raise ValueError("EFFECT_WINDOW does not overlap available bins.")
+        raise ValueError("RESP_WINDOW does not overlap available bins.")
 
     n_units, n_trials, _ = peth_stat.shape
     stat_trials = np.zeros((n_units, n_trials), dtype=float)
@@ -578,7 +611,7 @@ def per_unit_move_vs_stat_stats(
         except ValueError:
             p = 1.0
         pvals[ui] = p if np.isfinite(p) else 1.0
-    qvals = multipletests(pvals, alpha=0.05, method="fdr_bh")[1]
+    qvals = multipletests(pvals, alpha=QVAL_ALPHA, method="fdr_bh")[1]
     return delta, pvals, qvals, peak_latencies, stat_trials, move_trials
 
 
@@ -782,11 +815,11 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
         peth_all,
         bin_edges,
         unit_ids=inputs.unit_ids,
-        base_window=(-0.04, 0.0),
+        base_window=BASELINE_WINDOW,
         resp_window=RESP_WINDOW,
         test="wilcoxon",
         correction="bonferroni",
-        alpha=0.05,
+        alpha=QVAL_ALPHA,
     )
     exc_idx = np.where(masks["excited"])[0]
     print(f"  Excited units: {len(exc_idx)} / {len(inputs.unit_ids)}")
@@ -804,10 +837,14 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
 
     pk_stat_all = resp_per_unit(peth_stat_all, bc)
     pk_move_all = resp_per_unit(peth_move_all, bc)
+    bl_stat_all = baseline_per_unit(peth_stat_all, bc)
+    bl_move_all = baseline_per_unit(peth_move_all, bc)
+    above_bl = above_baseline_mask(pk_stat_all, pk_move_all, bl_stat_all, bl_move_all)
     sem_stat_all = np.vstack(resp_sem_log_per_unit(peth_stat_all, bc))
     sem_move_all = np.vstack(resp_sem_log_per_unit(peth_move_all, bc))
     print(
-        f"  All units ({len(inputs.unit_ids)}): {wilcox_str(pk_stat_all, pk_move_all)}"
+        f"  All units ({len(inputs.unit_ids)}): "
+        f"{wilcox_str(pk_stat_all, pk_move_all, gate_mask=above_bl)}"
     )
 
     snr_s = snr_per_unit(peth_stat_all, bc)
@@ -815,10 +852,10 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
     delta_move, _, qvals_move, peak_latencies, stat_trial_matrix, move_trial_matrix = (
         per_unit_move_vs_stat_stats(peth_stat_all, peth_move_all, bc)
     )
-    good_snr_both = (snr_s >= 3.0) & (snr_m >= 3.0)
+    good_snr_both = (snr_s >= SNR_THRESHOLD) & (snr_m >= SNR_THRESHOLD)
     good_idx = np.where(good_snr_both)[0]
-    sig_exc = (qvals_move < 0.05) & (delta_move > 0) & good_snr_both
-    sig_supp = (qvals_move < 0.05) & (delta_move < 0) & good_snr_both
+    sig_exc = (qvals_move < QVAL_ALPHA) & (delta_move > 0) & good_snr_both
+    sig_supp = (qvals_move < QVAL_ALPHA) & (delta_move < 0) & good_snr_both
     nonsig = (~sig_exc) & (~sig_supp) & good_snr_both
     print(
         "  Move-vs-stat peak-centered classes "
@@ -827,7 +864,7 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
     )
 
     base_mask = (bc >= -0.04) & (bc < 0.0)
-    effect_mask = (bc >= EFFECT_WINDOW[0]) & (bc < EFFECT_WINDOW[1])
+    effect_mask = (bc >= RESP_WINDOW[0]) & (bc < RESP_WINDOW[1])
 
     mean_stat_all = peth_stat_all.mean(axis=1)
     mean_move_all = peth_move_all.mean(axis=1)
@@ -945,8 +982,10 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
         paired_first_move[high_mask],
         bc,
     )
-    print(f"  Low rate:  {wilcox_str(pk_stat_low, pk_move_low)}")
-    print(f"  High rate: {wilcox_str(pk_stat_high, pk_move_high)}")
+    # Soft baseline gate uses the same per-unit baseline rates from the
+    # all-rates PETH (per-unit baseline shouldn't depend on rate subset).
+    print(f"  Low rate:  {wilcox_str(pk_stat_low, pk_move_low, gate_mask=above_bl)}")
+    print(f"  High rate: {wilcox_str(pk_stat_high, pk_move_high, gate_mask=above_bl)}")
 
     print(
         "  Example units: "
@@ -1019,6 +1058,9 @@ def analyze_comparison(inputs: SessionInputs, comparison: ComparisonDef):
             "stationary_label": stationary_label,
             "pk_stat_all": np.array([]),
             "pk_move_all": np.array([]),
+            "bl_stat_all": np.array([]),
+            "bl_move_all": np.array([]),
+            "above_bl_all": np.array([], dtype=bool),
             "pk_stat_low": np.array([]),
             "pk_move_low": np.array([]),
             "pk_stat_high": np.array([]),
@@ -1048,6 +1090,11 @@ def analyze_comparison(inputs: SessionInputs, comparison: ComparisonDef):
 
     pk_stat_all = resp_per_unit(peth_stat_all, bc)
     pk_move_all = resp_per_unit(peth_move_all, bc)
+    bl_stat_all = baseline_per_unit(peth_stat_all, bc)
+    bl_move_all = baseline_per_unit(peth_move_all, bc)
+    above_bl_all = above_baseline_mask(
+        pk_stat_all, pk_move_all, bl_stat_all, bl_move_all
+    )
     sem_stat_all = np.vstack(resp_sem_log_per_unit(peth_stat_all, bc))
     sem_move_all = np.vstack(resp_sem_log_per_unit(peth_move_all, bc))
 
@@ -1073,6 +1120,9 @@ def analyze_comparison(inputs: SessionInputs, comparison: ComparisonDef):
         "stationary_label": stationary_label,
         "pk_stat_all": pk_stat_all,
         "pk_move_all": pk_move_all,
+        "bl_stat_all": bl_stat_all,
+        "bl_move_all": bl_move_all,
+        "above_bl_all": above_bl_all,
         "pk_stat_low": pk_stat_low,
         "pk_move_low": pk_move_low,
         "pk_stat_high": pk_stat_high,
@@ -1794,7 +1844,7 @@ def main():
     )
     grb058 = load_db_session(
         subject="GRB058",
-        session="20260224_152424",
+        session="20260312_134952",
     )
 
     results = [

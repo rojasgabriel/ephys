@@ -22,7 +22,16 @@ def _fetch_good_units_table(
     session: str,
     unit_criteria_id: int = 1,
 ) -> tuple[pd.DataFrame, float]:
-    """Return good-unit rows with spike_times and depth, sorted by depth."""
+    """Return good-unit rows with spike_times and depth, sorted by depth.
+
+    `unit_criteria_id=1` is the project's standard quality criterion set
+    (amplitude / SNR / contamination thresholds defined upstream in labdata).
+    Don't change without reason — most downstream analyses assume criterion 1.
+
+    NOTE: for GRB006 20240821, the DB spike_times are stale. Scripts that
+    need GRB006 data should load from the local KS4 pkl instead (see the
+    analysis-conventions wiki page).
+    """
     sess_query = (
         SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'
     ).proj()

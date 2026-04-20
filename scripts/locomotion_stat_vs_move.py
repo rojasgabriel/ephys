@@ -1409,7 +1409,7 @@ def overlay_scatter_log(ax, panel_specs, title):
             fmt="o",
             color=color,
             ms=3,
-            alpha=0.25,
+            alpha=0.1,
             elinewidth=0.5,
             ecolor=(r, g, b, 0.04),
             zorder=2,

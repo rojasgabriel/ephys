@@ -301,7 +301,7 @@ def main():
 
     fig = make_grid(session_data)
     with PdfPages(OUT_PATH) as pdf:
-        pdf.savefig(fig, bbox_inches="tight")
+        pdf.savefig(fig, bbox_inches="tight", dpi=300)
     plt.close(fig)
     print(f"\nSaved → {OUT_PATH}")
 

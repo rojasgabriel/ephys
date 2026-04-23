@@ -201,6 +201,10 @@ def fetch_trial_metadata(
 
     Returns a DataFrame with trial-level metadata or None if Chipmunk data
     is unavailable.
+
+    Trial-count mismatches are treated conservatively. A one-trial mismatch is
+    tolerated as a likely trailing partial trial and is truncated with a
+    warning. Larger mismatches raise instead of silently truncating.
     """
     try:
         from chipmunk import Chipmunk  # type: ignore
@@ -234,11 +238,25 @@ def fetch_trial_metadata(
         ).sort_index()
 
         trial_starts = align_ev["trial_start"]
-        n = min(len(trial_starts), len(tdf))
-        if len(trial_starts) != len(tdf):
+        n_obx = len(trial_starts)
+        n_chipmunk = len(tdf)
+        n = min(n_obx, n_chipmunk)
+        mismatch = abs(n_obx - n_chipmunk)
+        if n == 0:
+            raise ValueError(
+                f"No aligned trials available for {subject} {session}: "
+                f"OBX={n_obx}, Chipmunk={n_chipmunk}"
+            )
+        if mismatch:
+            if mismatch > 1:
+                raise ValueError(
+                    f"Suspicious trial-count mismatch for {subject} {session}: "
+                    f"OBX trial_start pulses={n_obx}, Chipmunk trials={n_chipmunk}. "
+                    "Refusing to silently truncate."
+                )
             print(
-                f"Warning: {len(trial_starts)} OBX trial_start pulses vs "
-                f"{len(tdf)} Chipmunk trials — using first {n}"
+                f"Warning: {subject} {session} has a 1-trial OBX/Chipmunk mismatch "
+                f"(OBX={n_obx}, Chipmunk={n_chipmunk}); truncating to {n}."
             )
         trial_df = tdf.iloc[:n].copy()
         trial_df["trial_start_ts"] = trial_starts[:n]

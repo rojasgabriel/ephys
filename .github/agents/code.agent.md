@@ -18,7 +18,10 @@ notebooks/
   selectivity.ipynb   # population selectivity analysis (primary working notebook)
   PSTHViewer.ipynb    # interactive raster/PSTH/heatmap browser
   tutorials/          # tutorial notebooks
-scripts/              # standalone analysis scripts (each is a different analysis)
+scripts/maintained/   # canonical figure generators
+scripts/supporting/   # still-usable helpers and reference analyses
+scripts/diagnostics/  # one-off sync/debug investigations
+scripts/tools/        # general interactive utilities
 labdata_plugin/       # database interface: analysisschema.py, utils.py
 ```
 
@@ -40,8 +43,8 @@ Project is installed as editable package `ephys`; imports use `from ephys.src.ut
 ### PETHs
 - Alpha-kernel smoothed: `t_rise=0.001`, `t_decay=0.025` (seconds)
 - Standard params: `pre_seconds=0.1`, `post_seconds=0.15`, `binwidth_ms=10`
-- Output shape: `(n_units, n_trials, n_timebins)`, units are **sp/s** (divide counts by `binwidth_ms/1000`)
-- `compute_population_peth()` in `utils_analysis.py` wraps `spks.population_peth` and handles kernel construction and sp/s conversion
+- Output shape: `(n_units, n_trials, n_timebins)`, units are **sp/s**
+- `compute_population_peth()` in `utils_analysis.py` wraps `spks.population_peth` and is the canonical maintained path for firing-rate PETHs
 
 ### Selectivity
 - Windows: baseline `(-0.04, 0.0)s`, response `(0.06, 0.10)s`
@@ -63,7 +66,7 @@ Project is installed as editable package `ephys`; imports use `from ephys.src.ut
 ## Implementation Principles
 
 - **Always trust the human or research agent's scientific decisions** — never override or second-guess analysis parameters, test choices, or interpretation logic. If a conflict arises, defer to the research agent or user.
-- **Scripts**: treat each file in `scripts/` as a standalone analysis. Handle CLI args, figure saving, and output conventions as needed for each script. Do not assume notebook conventions apply.
+- **Scripts**: treat each file under `scripts/` as a standalone entrypoint, but preserve the role split: `maintained/` is the public analysis surface, `supporting/` is secondary, `diagnostics/` is one-off debugging, `tools/` is general-purpose utility.
 - **labdata_plugin**: treat as the authoritative source for database access, session metadata, and schema logic. Always check for relevant functions in `analysisschema.py` and `utils.py` before rolling your own data access or schema logic.
 - **Don't over-engineer**: implement only what is asked. No extra error handling, abstractions, or configurability for hypothetical future uses.
 - **Keep utility functions in `src/utils/`**: don't duplicate logic in notebooks — extract reusable pieces to `utils_analysis.py` or `viz.py`.

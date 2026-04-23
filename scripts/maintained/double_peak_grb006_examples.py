@@ -2,7 +2,7 @@
 
 Uses the archived local GRB006 trial timestamps plus the KS4 spike-time export
 to identify double-peak units with the same unsmoothed 10 ms-bin settings used
-for the GRB058 Dario figure.
+for the maintained double-peak summary surface.
 
 Output:
     figures/double_peak/grb006_examples.pdf
@@ -16,7 +16,6 @@ from pathlib import Path
 
 import matplotlib
 import numpy as np
-import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 
 matplotlib.use("Agg")
@@ -29,70 +28,30 @@ from ephys.src.config.double_peak import (
     PETH_KWARGS,
     SELECTIVITY_KWARGS,
 )
+from ephys.src.utils.double_peak_helpers import (
+    GRB006_SESSION as SESSION,
+    baseline_mean,
+    load_grb006_first_stim,
+    load_local_spike_times,
+    mark_peaks,
+    plot_mean_sem_trace as plot_trace,
+    resolve_grb006_spike_times_path,
+)
 from ephys.src.utils.utils_analysis import (
     classify_peak_count,
     compute_population_peth,
     compute_unit_selectivity,
 )
 
-
-SESSION = "20240821_121447"
-TRIAL_TS_PATH = Path(
-    "/Users/gabriel/data/GRB006/20240821_121447/pre_processed/trial_ts.pkl"
-)
-SPIKE_TIMES_PATHS = [
-    Path(
-        "/Users/gabriel/data/GRB006/20240821_121447/pre_processed/"
-        "20240821_121447_ks4_spike_times.pkl"
-    ),
-    Path("/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"),
-]
 OUT_PATH = Path("/Users/gabriel/lib/ephys/figures/double_peak/grb006_examples.pdf")
 
 N_PANELS = 6
 
 
-def resolve_spike_times_path() -> Path:
-    for path in SPIKE_TIMES_PATHS:
-        if path.exists():
-            return path
-    searched = "\n".join(str(path) for path in SPIKE_TIMES_PATHS)
-    raise FileNotFoundError(f"Could not find KS4 spike-time export in:\n{searched}")
-
-
-def load_local_spike_times(spike_times_path: Path, sampling_rate: float = 30000.0):
-    spike_df = pd.read_pickle(spike_times_path)
-    unit_ids = spike_df["unit_id"].astype(int).tolist()
-    spike_times = [
-        np.asarray(times, dtype=float) / sampling_rate
-        for times in spike_df["spike_times"].tolist()
-    ]
-    return unit_ids, spike_times
-
-
-def baseline_mean(peth_trials, bin_centers):
-    mask = (bin_centers >= BASELINE_WINDOW[0]) & (bin_centers < BASELINE_WINDOW[1])
-    return peth_trials.mean(axis=0)[mask].mean()
-
-
-def plot_trace(ax, bin_centers, peth_trials, color):
-    mean = peth_trials.mean(axis=0)
-    sem = peth_trials.std(axis=0) / np.sqrt(peth_trials.shape[0])
-    ax.plot(bin_centers, mean, color=color, linewidth=1.5)
-    ax.fill_between(bin_centers, mean - sem, mean + sem, alpha=0.25, color=color)
-
-
-def mark_peaks(ax, peak_row, color):
-    for pt, ph in zip(peak_row["peak_times"], peak_row["peak_heights"]):
-        ax.plot(pt, ph, "v", color=color, markersize=7, zorder=5)
-
-
 def collect_double_peak_rows():
-    trial_ts = pd.read_pickle(TRIAL_TS_PATH).reset_index(drop=True)
-    first_stim = trial_ts["first_stim_ts"].to_numpy(dtype=float)
-    first_stim = first_stim[np.isfinite(first_stim)]
+    first_stim = load_grb006_first_stim()
 
-    spike_times_path = resolve_spike_times_path()
+    spike_times_path = resolve_grb006_spike_times_path()
     unit_ids, spike_times = load_local_spike_times(spike_times_path)
 
     peth, bin_edges, bin_centers = compute_population_peth(
@@ -115,7 +74,7 @@ def collect_double_peak_rows():
     for _, peak_row in peaks_df.loc[peaks_df["n_peaks"] == 2].iterrows():
         uid = int(peak_row["unit"])
         i = exc_ids.index(uid)
-        base = baseline_mean(exc_peth[i], bin_centers)
+        base = baseline_mean(exc_peth[i], bin_centers, BASELINE_WINDOW)
         heights_above = [float(h - base) for h in peak_row["peak_heights"]]
         if min(heights_above) < MIN_PEAK_HEIGHT_ABS:
             continue
@@ -192,7 +151,7 @@ def main():
 
     fig = make_figure(rows)
     with PdfPages(OUT_PATH) as pdf:
-        pdf.savefig(fig, bbox_inches="tight")
+        pdf.savefig(fig, bbox_inches="tight", dpi=300)
     print(f"\nFigure saved: {OUT_PATH}")
 
 

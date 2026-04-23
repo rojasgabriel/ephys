@@ -4,7 +4,7 @@ Analysis code for studying the impact of movements on V1 activity during freely-
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.10+ (`.python-version` pins the default dev/CI interpreter to 3.11)
 - [uv](https://astral.sh/uv)
 
 ## Installation
@@ -17,6 +17,13 @@ Clone the repository:
 Install dependencies:
 
     uv sync
+
+Analysis entrypoints are grouped under `scripts/` by role:
+
+- `scripts/maintained/` — canonical figure generators
+- `scripts/supporting/` — secondary helpers and reference analyses
+- `scripts/diagnostics/` — one-off debug investigations
+- `scripts/tools/` — general utilities
 
 Tested on:
 

@@ -3,7 +3,6 @@
 import pandas as pd
 import numpy as np
 import seaborn as sns
-from os.path import join as pjoin
 import matplotlib.pyplot as plt
 from ephys.src.utils.utils_analysis import (
     compute_population_peth,
@@ -17,16 +16,17 @@ plt.rcParams["font.size"] = 12
 plt.rcParams["figure.dpi"] = 100
 
 # %% Load data
-animal = "GRB006"  # example animal
-session = "20240723_142451"  # example session
+animal = "GRB006"
+session = "20240821_121447"
 
-data_dir = "/Users/gabriel/data"
-trial_ts = pd.read_pickle(
-    pjoin(data_dir, animal, session, "pre_processed", "trial_ts.pkl")
+trial_ts = pd.read_pickle("/Users/gabriel/Downloads/Organized/Code/trial_ts.pkl")
+spike_df = pd.read_pickle(
+    "/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"
 )
-spike_times_per_unit = np.load(
-    pjoin(data_dir, animal, session, "pre_processed", "spike_times_per_unit.npy"),
-    allow_pickle=True,
+spike_times_per_unit = (
+    spike_df["spike_times"]
+    .apply(lambda st: np.asarray(st, dtype=float) / 30000.0)
+    .to_numpy()
 )
 
 
@@ -50,6 +50,7 @@ first_stim_peth, bin_edges, bin_centers = compute_population_peth(
 )
 
 n_units, n_trials, n_timepoints = first_stim_peth.shape
+unit_ids = np.arange(n_units)
 
 # %% Selectivity: baseline vs response (simple + robust)
 # Assumptions:
@@ -61,6 +62,7 @@ n_units, n_trials, n_timepoints = first_stim_peth.shape
 results_df, masks = compute_unit_selectivity(
     first_stim_peth,
     bin_edges,
+    unit_ids=unit_ids,
     base_window=(-0.1, 0.0),
     resp_window=(0.04, 0.10),
     test="wilcoxon",

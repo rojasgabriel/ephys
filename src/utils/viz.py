@@ -505,10 +505,8 @@ class ConditionedPSTHWidget:
             post_seconds=post_seconds,
             binwidth_ms=binwidth_ms,
         )
-        # In this repo/environment, outputs are scaled high by ~1/binwidth.
-        scale_back = binwidth_ms / 1000.0
-        self.peth_stat = peth_stat * scale_back
-        self.peth_move = peth_move * scale_back
+        self.peth_stat = peth_stat
+        self.peth_move = peth_move
 
         self._build_widgets()
 

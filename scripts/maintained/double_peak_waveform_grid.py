@@ -1,4 +1,4 @@
-"""Compact 2-column scatter grid: waveform metrics of double-peak units.
+"""Compact scatter grid: waveform profile of double-peak units.
 
 Sessions: GRB006 20240821 + GRB058 20260312.
 
@@ -6,7 +6,6 @@ Layout
 ------
          GRB006 20240821     |  GRB058 20260312
 Row 0:   FR vs spike_dur     |  FR vs spike_dur
-Row 1:   depth vs spike_dur  |  depth vs spike_dur
 
 All good units shown (not just excited). Double-peak units in orange,
 all others in blue. FS/RS boundary line at 0.4 ms (visual reference only).
@@ -41,6 +40,12 @@ from ephys.src.config.double_peak import (
     PETH_KWARGS,
     SELECTIVITY_KWARGS,
 )
+from ephys.src.utils.double_peak_helpers import (
+    baseline_mean,
+    load_grb006_first_stim,
+    load_local_spike_times,
+    resolve_grb006_spike_times_path,
+)
 from ephys.src.utils.utils_IO import fetch_session_events
 from ephys.src.utils.utils_analysis import (
     classify_peak_count,
@@ -56,19 +61,10 @@ SESSIONS = [
     ("GRB058", "20260312_134952"),
 ]
 
-# GRB006 local paths (DB spike times are stale; use KS4 local export instead)
-GRB006_TRIAL_TS_PATH = Path(
-    "/Users/gabriel/data/GRB006/20240821_121447/pre_processed/trial_ts.pkl"
-)
-GRB006_SPIKE_TIMES_PATHS = [
-    Path(
-        "/Users/gabriel/data/GRB006/20240821_121447/pre_processed/"
-        "20240821_121447_ks4_spike_times.pkl"
-    ),
-    Path("/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"),
-]
-
 OUT_PATH = Path("/Users/gabriel/lib/ephys/figures/double_peak/waveform_grid.pdf")
+OUT_PATH_MONO = Path(
+    "/Users/gabriel/lib/ephys/figures/double_peak/waveform_grid_nocolor.pdf"
+)
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 UNIT_CRITERIA_ID = 1
@@ -98,8 +94,6 @@ def _fetch_unit_table(subject: str, session: str) -> pd.DataFrame:
             "spike_times",
             "depth",
             "spike_duration",
-            "fw3m",
-            "spike_amplitude",
             "firing_rate",
             as_dict=True,
         )
@@ -131,24 +125,13 @@ def _fetch_unit_table(subject: str, session: str) -> pd.DataFrame:
 
 def _load_grb006_spike_times_map(sampling_rate: float = 30000.0) -> dict:
     """Return {unit_id: spike_times_s} from the local KS4 pkl."""
-    for p in GRB006_SPIKE_TIMES_PATHS:
-        if p.exists():
-            spk = pd.read_pickle(p)
-            return {
-                int(row["unit_id"]): np.asarray(row["spike_times"], dtype=float)
-                / sampling_rate
-                for _, row in spk.iterrows()
-            }
-    raise FileNotFoundError(
-        "GRB006 KS4 spike-times pkl not found in:\n"
-        + "\n".join(str(p) for p in GRB006_SPIKE_TIMES_PATHS)
-    )
+    path = resolve_grb006_spike_times_path()
+    unit_ids, spike_times = load_local_spike_times(path, sampling_rate=sampling_rate)
+    return dict(zip(unit_ids, spike_times))
 
 
 def _load_grb006_first_stim() -> np.ndarray:
-    trial_ts = pd.read_pickle(GRB006_TRIAL_TS_PATH).reset_index(drop=True)
-    first_stim = trial_ts["first_stim_ts"].to_numpy(dtype=float)
-    return first_stim[np.isfinite(first_stim)]
+    return load_grb006_first_stim()
 
 
 def _get_first_stim(subject: str, session: str) -> np.ndarray:
@@ -189,12 +172,11 @@ def _classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFr
         exc_peth, bin_centers, unit_ids=exc_ids, **PEAK_KWARGS
     )
 
-    bl_mask = (bin_centers >= BASELINE_WINDOW[0]) & (bin_centers < BASELINE_WINDOW[1])
     double_ids: set[int] = set()
     for _, row in peaks_df.loc[peaks_df["n_peaks"] == 2].iterrows():
         uid = int(row["unit"])
         i = exc_ids.index(uid)
-        bl = exc_peth[i].mean(axis=0)[bl_mask].mean()
+        bl = baseline_mean(exc_peth[i], bin_centers, BASELINE_WINDOW)
         if min(float(h) - bl for h in row["peak_heights"]) >= MIN_PEAK_HEIGHT_ABS:
             double_ids.add(uid)
 
@@ -209,7 +191,7 @@ def _classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFr
 # ---------------------------------------------------------------------------
 
 
-def make_grid(session_data):
+def make_grid(session_data, color_by_double: bool = True):
     """session_data: list of dicts with keys subject, session, df."""
     ncols = len(session_data)
     fig, axes = plt.subplots(
@@ -225,44 +207,60 @@ def make_grid(session_data):
         df = sd["df"]
         subj, sess = sd["subject"], sd["session"]
 
-        other = df[~df["is_double"]]
-        double = df[df["is_double"]]
-
         col_title = f"{subj}  {sess[:8]}\nn={len(df)}  dp={int(df['is_double'].sum())}"
 
         ax = axes[col]
-        ax.scatter(
-            other["spike_duration_ms"],
-            other["firing_rate"],
-            s=14,
-            alpha=0.40,
-            color=COL_OTHER,
-            rasterized=True,
-            label=f"other (n={len(other)})",
-        )
-        ax.scatter(
-            double["spike_duration_ms"],
-            double["firing_rate"],
-            s=28,
-            alpha=0.90,
-            color=COL_DOUBLE,
-            zorder=3,
-            edgecolors="k",
-            linewidths=0.3,
-            label=f"double-peak (n={len(double)})",
-        )
+        if color_by_double:
+            other = df[~df["is_double"]]
+            double = df[df["is_double"]]
+            ax.scatter(
+                other["spike_duration_ms"],
+                other["firing_rate"],
+                s=14,
+                alpha=0.40,
+                color=COL_OTHER,
+                rasterized=True,
+                label=f"other (n={len(other)})",
+            )
+            ax.scatter(
+                double["spike_duration_ms"],
+                double["firing_rate"],
+                s=28,
+                alpha=0.90,
+                color=COL_DOUBLE,
+                zorder=3,
+                edgecolors="k",
+                linewidths=0.3,
+                label=f"double-peak (n={len(double)})",
+            )
+            ax.legend(frameon=False, fontsize=8, loc="upper right")
+        else:
+            ax.scatter(
+                df["spike_duration_ms"],
+                df["firing_rate"],
+                s=16,
+                alpha=0.45,
+                color="0.25",
+                rasterized=True,
+            )
         ax.axvline(NARROW_BROAD_MS, color="k", lw=0.7, ls="--", alpha=0.6)
         ax.set_xlabel("Spike duration (ms)", fontsize=9)
         ax.set_ylabel("Firing rate (sp/s)", fontsize=9)
         ax.set_title(col_title, fontsize=9)
-        ax.legend(frameon=False, fontsize=8, loc="upper right")
         ax.tick_params(labelsize=8)
 
-    fig.suptitle(
-        "Double-peak unit waveform profile  ·  all good units shown  ·  "
-        f"FS/RS boundary = {NARROW_BROAD_MS} ms",
-        fontsize=10,
-    )
+    if color_by_double:
+        fig.suptitle(
+            "Double-peak unit waveform profile  ·  all good units shown  ·  "
+            f"FS/RS boundary = {NARROW_BROAD_MS} ms",
+            fontsize=10,
+        )
+    else:
+        fig.suptitle(
+            "Waveform profile of all good units  ·  no double-peak color split  ·  "
+            f"FS/RS boundary = {NARROW_BROAD_MS} ms",
+            fontsize=10,
+        )
     return fig
 
 
@@ -304,6 +302,12 @@ def main():
         pdf.savefig(fig, bbox_inches="tight", dpi=300)
     plt.close(fig)
     print(f"\nSaved → {OUT_PATH}")
+
+    fig_mono = make_grid(session_data, color_by_double=False)
+    with PdfPages(OUT_PATH_MONO) as pdf:
+        pdf.savefig(fig_mono, bbox_inches="tight", dpi=300)
+    plt.close(fig_mono)
+    print(f"Saved → {OUT_PATH_MONO}")
 
 
 if __name__ == "__main__":

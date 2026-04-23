@@ -1,4 +1,4 @@
-"""Build the single-page double-peak figure for the Dario email.
+"""Build the maintained collaborator-facing double-peak summary figure.
 
 Story:
 1. Anne and Gabriel first noticed the double-peak response shape in GRB006.
@@ -25,6 +25,15 @@ from ephys.src.config.double_peak import (
     PETH_KWARGS,
     SELECTIVITY_KWARGS,
 )
+from ephys.src.utils.double_peak_helpers import (
+    GRB006_SESSION,
+    baseline_mean,
+    load_grb006_first_stim,
+    load_local_spike_times,
+    mark_peaks,
+    plot_mean_sem_trace as plot_trace,
+    resolve_grb006_spike_times_path,
+)
 from ephys.src.utils.utils_IO import (
     fetch_good_units,
     fetch_session_events,
@@ -37,17 +46,6 @@ from ephys.src.utils.utils_analysis import (
 )
 
 
-GRB006_SESSION = "20240821_121447"
-GRB006_TRIAL_TS_PATH = Path(
-    "/Users/gabriel/data/GRB006/20240821_121447/pre_processed/trial_ts.pkl"
-)
-GRB006_SPIKE_TIMES_PATHS = [
-    Path(
-        "/Users/gabriel/data/GRB006/20240821_121447/pre_processed/"
-        "20240821_121447_ks4_spike_times.pkl"
-    ),
-    Path("/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"),
-]
 GRB006_SHOW_UNITS = [579, 694, 217]
 
 GRB058_SUBJECT = "GRB058"
@@ -70,48 +68,9 @@ FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 OUT_PATH = FIGURE_DIR / "dario_story.pdf"
 
 
-def resolve_grb006_spike_times_path() -> Path:
-    for path in GRB006_SPIKE_TIMES_PATHS:
-        if path.exists():
-            return path
-    searched = "\n".join(str(path) for path in GRB006_SPIKE_TIMES_PATHS)
-    raise FileNotFoundError(
-        f"Could not find GRB006 KS4 spike-time export in:\n{searched}"
-    )
-
-
-def load_local_spike_times(spike_times_path: Path, sampling_rate: float = 30000.0):
-    spike_df = pd.read_pickle(spike_times_path)
-    unit_ids = spike_df["unit_id"].astype(int).tolist()
-    spike_times = [
-        np.asarray(times, dtype=float) / sampling_rate
-        for times in spike_df["spike_times"].tolist()
-    ]
-    return unit_ids, spike_times
-
-
-def baseline_mean(peth_trials, bin_centers):
-    mask = (bin_centers >= BASELINE_WINDOW[0]) & (bin_centers < BASELINE_WINDOW[1])
-    return peth_trials.mean(axis=0)[mask].mean()
-
-
-def plot_trace(ax, bin_centers, peth_trials, color, label):
-    mean = peth_trials.mean(axis=0)
-    sem = peth_trials.std(axis=0) / np.sqrt(peth_trials.shape[0])
-    ax.plot(bin_centers, mean, color=color, linewidth=1.5, label=label)
-    ax.fill_between(bin_centers, mean - sem, mean + sem, alpha=0.25, color=color)
-
-
-def mark_peaks(ax, peak_row, color):
-    for pt, ph in zip(peak_row["peak_times"], peak_row["peak_heights"]):
-        ax.plot(pt, ph, "v", color=color, markersize=7, zorder=5)
-
-
 def collect_grb006():
     spike_times_path = resolve_grb006_spike_times_path()
-    trial_ts = pd.read_pickle(GRB006_TRIAL_TS_PATH).reset_index(drop=True)
-    first_stim = trial_ts["first_stim_ts"].to_numpy(dtype=float)
-    first_stim = first_stim[np.isfinite(first_stim)]
+    first_stim = load_grb006_first_stim()
 
     unit_ids, spike_times = load_local_spike_times(spike_times_path)
     peth, bin_edges, bin_centers = compute_population_peth(
@@ -133,10 +92,15 @@ def collect_grb006():
     double_ids = []
     for _, peak_row in peaks_df.loc[peaks_df["n_peaks"] == 2].iterrows():
         uid = int(peak_row["unit"])
+        i = exc_ids.index(uid)
+        base = baseline_mean(exc_peth[i], bin_centers, BASELINE_WINDOW)
+        heights_above = [float(h - base) for h in peak_row["peak_heights"]]
+        if min(heights_above) < MIN_PEAK_HEIGHT_ABS:
+            continue
         double_ids.append(uid)
         rows[uid] = dict(
             uid=uid,
-            peth=exc_peth[exc_ids.index(uid)],
+            peth=exc_peth[i],
             bin_centers=bin_centers,
             peaks_df_row=peak_row,
             peak_times_ms=[int(round(1000 * t)) for t in peak_row["peak_times"]],
@@ -220,7 +184,7 @@ def collect_grb058_session(session):
     for _, peak_row in peaks_df_15.loc[peaks_df_15["n_peaks"] == 2].iterrows():
         uid = int(peak_row["unit"])
         i = exc_ids.index(uid)
-        base = baseline_mean(exc_peth[i], bin_centers)
+        base = baseline_mean(exc_peth[i], bin_centers, BASELINE_WINDOW)
         heights_above = [float(h - base) for h in peak_row["peak_heights"]]
         if min(heights_above) >= MIN_PEAK_HEIGHT_ABS:
             double_ids.append(uid)
@@ -434,7 +398,7 @@ def main():
     fig = make_figure(grb006, session_0312, session_0319)
 
     with PdfPages(OUT_PATH) as pdf:
-        pdf.savefig(fig, bbox_inches="tight")
+        pdf.savefig(fig, bbox_inches="tight", dpi=300)
 
     print(f"Figure saved: {OUT_PATH}")
 

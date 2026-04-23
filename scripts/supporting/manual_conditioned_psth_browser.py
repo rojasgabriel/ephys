@@ -1,7 +1,7 @@
 """Standalone interactive browser for last-stationary vs first-movement PSTHs.
 
 Usage:
-  python scripts/manual_conditioned_psth_browser.py --subject GRB058 --session 20260312_134952
+  python scripts/supporting/manual_conditioned_psth_browser.py --subject GRB058 --session 20260312_134952
 
 Controls:
   left/right or j/l : previous/next unit
@@ -28,14 +28,12 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 from matplotlib.widgets import Button
 from scipy.stats import sem
 
-from ephys.src.utils.utils_IO import (
-    fetch_good_units,
-    fetch_session_events,
-    fetch_trial_metadata,
-)
 from ephys.src.utils.utils_analysis import (
     build_trial_stim_classification,
     compute_population_peth,
@@ -66,8 +64,147 @@ Representative label (per unit)
 Session controls
   p                 : print current picks + labels
   c                 : clear all picks + labels
+  click Save PSTH   : export the current PSTH panel only as a PDF
   q                 : quit (saves and prints final state)
 """
+
+GRB006_SUBJECT = "GRB006"
+GRB006_SESSION = "20240821_121447"
+GRB006_TRIAL_TS_PATH = Path("/Users/gabriel/Downloads/Organized/Code/trial_ts.pkl")
+GRB006_SPIKE_TIMES_PATH = Path(
+    "/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"
+)
+
+
+def enrich_trial_df(trial_df: pd.DataFrame) -> pd.DataFrame:
+    trial_df = trial_df.reset_index(drop=True).copy()
+    trial_df["prev_response"] = trial_df["response"].shift(1)
+    trial_df["prev_rewarded"] = trial_df["rewarded"].shift(1)
+    trial_df["prev_stim_rate"] = trial_df["stim_rate_vision"].shift(1)
+    return trial_df
+
+
+def derive_local_trial_signature(local_row: pd.Series) -> tuple[int | None, int, int]:
+    rate = local_row.get("trial_rate")
+    rate_key = int(rate) if np.isfinite(rate) else None
+    outcome = int(local_row.get("trial_outcome"))
+    side = local_row.get("response_side")
+    if np.isfinite(side):
+        choice = 1 if int(side) == 1 else -1
+    else:
+        choice = 0
+    return rate_key, choice, outcome
+
+
+def derive_full_trial_signature(full_row: pd.Series) -> tuple[int | None, int, int]:
+    rate = full_row.get("stim_rate_vision")
+    rate_key = int(rate) if np.isfinite(rate) else None
+    choice = int(full_row.get("response", 0))
+    if full_row.get("rewarded", 0) == 1:
+        outcome = 1
+    elif full_row.get("with_choice", 0) == 1:
+        outcome = 0
+    else:
+        outcome = 2
+    return rate_key, choice, outcome
+
+
+def align_local_trials_to_full_trial_df(
+    local_trial_ts: pd.DataFrame, full_trial_df: pd.DataFrame
+) -> np.ndarray:
+    matched_idx = []
+    start = 0
+    full_signatures = [
+        derive_full_trial_signature(row) for _, row in full_trial_df.iterrows()
+    ]
+    for _, local_row in local_trial_ts.iterrows():
+        target = derive_local_trial_signature(local_row)
+        found = None
+        for idx in range(start, len(full_signatures)):
+            if full_signatures[idx] == target:
+                found = idx
+                break
+        if found is None:
+            relaxed = (target[0], target[2])
+            for idx in range(start, len(full_signatures)):
+                probe = full_signatures[idx]
+                if (probe[0], probe[2]) == relaxed:
+                    found = idx
+                    break
+        if found is None:
+            raise RuntimeError(
+                "Could not align local paired trial rows to Chipmunk trial rows "
+                f"for {target} starting at full trial index {start}."
+            )
+        matched_idx.append(found)
+        start = found + 1
+    return np.asarray(matched_idx, dtype=int)
+
+
+def fetch_chipmunk_session_trials(subject: str, session: str) -> pd.DataFrame:
+    from labdata.schema import DecisionTask  # noqa: F401
+    from chipmunk import Chipmunk  # type: ignore
+
+    restriction = f"subject_name = '{subject}' AND session_name = '{session}'"
+    trial_df = pd.DataFrame(
+        (Chipmunk * Chipmunk.Trial * Chipmunk.TrialParameters & restriction).fetch(
+            order_by="trial_num"
+        )
+    )
+    if trial_df.empty:
+        raise RuntimeError(f"Could not load Chipmunk trials for {subject} {session}")
+    return enrich_trial_df(trial_df)
+
+
+def load_grb006_downloads_data() -> tuple[
+    dict[int, np.ndarray], np.ndarray, np.ndarray
+]:
+    if not GRB006_TRIAL_TS_PATH.exists():
+        raise FileNotFoundError(f"Missing GRB006 trial_ts file: {GRB006_TRIAL_TS_PATH}")
+    if not GRB006_SPIKE_TIMES_PATH.exists():
+        raise FileNotFoundError(
+            f"Missing GRB006 spike-times file: {GRB006_SPIKE_TIMES_PATH}"
+        )
+
+    trial_ts = pd.read_pickle(GRB006_TRIAL_TS_PATH).reset_index(drop=True).copy()
+    trial_df = fetch_chipmunk_session_trials(GRB006_SUBJECT, GRB006_SESSION)
+    trial_ts["trial_idx"] = align_local_trials_to_full_trial_df(trial_ts, trial_df)
+    spike_df = pd.read_pickle(GRB006_SPIKE_TIMES_PATH)
+    st_per_unit = {
+        int(row["unit_id"]): np.asarray(row["spike_times"], dtype=float) / 30000.0
+        for _, row in spike_df.iterrows()
+    }
+    anchors = extract_conditioned_stim_anchors(trial_ts)
+    paired_last_stat = np.asarray(anchors["paired_last_stationary"], dtype=float)
+    paired_first_move = np.asarray(anchors["paired_first_movement"], dtype=float)
+    return st_per_unit, paired_last_stat, paired_first_move
+
+
+def load_browser_data(
+    subject: str, session: str, unit_criteria_id: int
+) -> tuple[dict[int, np.ndarray], np.ndarray, np.ndarray]:
+    if subject == GRB006_SUBJECT and session == GRB006_SESSION:
+        return load_grb006_downloads_data()
+
+    from ephys.src.utils.utils_IO import (
+        fetch_good_units,
+        fetch_session_events,
+        fetch_trial_metadata,
+    )
+
+    st_per_unit = fetch_good_units(subject, session, unit_criteria_id)
+    align_ev = fetch_session_events(subject, session)
+    trial_df = fetch_trial_metadata(subject, session, align_ev)
+    if trial_df is None:
+        raise RuntimeError(
+            "Chipmunk trial metadata is required for conditioned browsing."
+        )
+
+    trial_ts = build_trial_stim_classification(align_ev, trial_df)
+    anchors = extract_conditioned_stim_anchors(trial_ts)
+    paired_last_stat = np.asarray(anchors["paired_last_stationary"], dtype=float)
+    paired_first_move = np.asarray(anchors["paired_first_movement"], dtype=float)
+    return st_per_unit, paired_last_stat, paired_first_move
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,18 +231,9 @@ def main() -> None:
     args = parse_args()
 
     print("Loading data...")
-    st_per_unit = fetch_good_units(args.subject, args.session, args.unit_criteria_id)
-    align_ev = fetch_session_events(args.subject, args.session)
-    trial_df = fetch_trial_metadata(args.subject, args.session, align_ev)
-    if trial_df is None:
-        raise RuntimeError(
-            "Chipmunk trial metadata is required for conditioned browsing."
-        )
-
-    trial_ts = build_trial_stim_classification(align_ev, trial_df)
-    anchors = extract_conditioned_stim_anchors(trial_ts)
-    paired_last_stat = anchors["paired_last_stationary"]
-    paired_first_move = anchors["paired_first_movement"]
+    st_per_unit, paired_last_stat, paired_first_move = load_browser_data(
+        args.subject, args.session, args.unit_criteria_id
+    )
 
     unit_ids = list(st_per_unit.keys())
     spike_times = list(st_per_unit.values())
@@ -124,11 +252,6 @@ def main() -> None:
         post_seconds=args.post_seconds,
         binwidth_ms=args.binwidth_ms,
     )
-
-    # Keep y-axis values in realistic sp/s in this environment.
-    peth_scale_back = args.binwidth_ms / 1000.0
-    peth_stat *= peth_scale_back
-    peth_move *= peth_scale_back
 
     if not unit_ids:
         raise RuntimeError("No units found for this session/criteria.")
@@ -153,14 +276,19 @@ def main() -> None:
     )
     state_path = Path(args.state_path) if args.state_path else default_state_path
     state_path.parent.mkdir(parents=True, exist_ok=True)
+    export_dir = Path.cwd() / "figures"
+    export_dir.mkdir(parents=True, exist_ok=True)
 
     fig = plt.figure(figsize=(11.8, 5.9))
     gs = fig.add_gridspec(1, 2, width_ratios=[4.3, 1.7])
     ax = fig.add_subplot(gs[0, 0])
-    side_gs = gs[0, 1].subgridspec(2, 1, height_ratios=[13, 1.2])
+    side_gs = gs[0, 1].subgridspec(3, 1, height_ratios=[12, 1.2, 1.2])
     side_ax = fig.add_subplot(side_gs[0, 0])
     jump_ax = fig.add_subplot(side_gs[1, 0])
+    save_ax = fig.add_subplot(side_gs[2, 0])
     jump_button = Button(jump_ax, "Next incomplete", color="0.94", hovercolor="0.85")
+    save_button = Button(save_ax, "Save PSTH", color="0.94", hovercolor="0.85")
+    global_y_hi = float(np.percentile(np.r_[peth_stat, peth_move], 99.5))
 
     def normalize_effect_label(raw_label: str) -> str:
         label = raw_label.strip().lower()
@@ -293,10 +421,9 @@ def main() -> None:
                 return
         print(f"No other units found in cluster C{current_cluster}.")
 
-    def redraw() -> None:
-        nonlocal idx
-        idx = max(0, min(idx, len(unit_ids) - 1))
-        ui = idx
+    def draw_psth(
+        target_ax, ui: int, include_title: bool = True
+    ) -> tuple[float, float]:
         uid = unit_ids[ui]
         ps = peth_stat[ui]
         pm = peth_move[ui]
@@ -320,36 +447,62 @@ def main() -> None:
         move_resp = float(pm[:, resp_mask].mean())
         delta = move_resp - stat_resp
 
-        ax.clear()
-        ax.plot(
+        target_ax.clear()
+        target_ax.plot(
             bc,
             ms,
             color="steelblue",
             lw=1.8,
             label=f"last stationary (n={len(paired_last_stat)})",
         )
-        ax.fill_between(bc, ms - ss, ms + ss, color="steelblue", alpha=0.25)
-        ax.plot(
+        target_ax.fill_between(bc, ms - ss, ms + ss, color="steelblue", alpha=0.25)
+        target_ax.plot(
             bc,
             mm,
             color="darkorange",
             lw=1.8,
             label=f"first movement (n={len(paired_first_move)})",
         )
-        ax.fill_between(bc, mm - sm, mm + sm, color="darkorange", alpha=0.25)
-        ax.axvline(0, color="gray", linestyle="--", lw=0.8)
-        ax.set_xlabel("Time from stim (s)")
-        ax.set_ylabel("sp/s")
-        ax.set_title(
-            f"Unit {uid} ({ui + 1}/{len(unit_ids)})  "
-            f"stat={stat_resp:.2f}, move={move_resp:.2f}, Δ={delta:+.2f} sp/s\n"
-            f"effect={effect_label}, peak={peak_label}, representative={rep_label}, "
-            f"cluster={f'C{cluster_label}' if cluster_label is not None else 'unlabeled'}"
-        )
+        target_ax.fill_between(bc, mm - sm, mm + sm, color="darkorange", alpha=0.25)
+        target_ax.axvline(0, color="gray", linestyle="--", lw=0.8)
+        target_ax.set_xlabel("Time from stim (s)")
+        target_ax.set_ylabel("sp/s")
+        if include_title:
+            target_ax.set_title(
+                f"Unit {uid} ({ui + 1}/{len(unit_ids)})  "
+                f"stat={stat_resp:.2f}, move={move_resp:.2f}, Δ={delta:+.2f} sp/s\n"
+                f"effect={effect_label}, peak={peak_label}, representative={rep_label}, "
+                f"cluster={f'C{cluster_label}' if cluster_label is not None else 'unlabeled'}"
+            )
         if args.shared_ylim:
-            y_hi = float(np.percentile(np.r_[peth_stat, peth_move], 99.5))
-            ax.set_ylim(0, max(5.0, y_hi))
-        ax.legend(frameon=False, fontsize=8, loc="upper right")
+            target_ax.set_ylim(0, max(5.0, global_y_hi))
+        target_ax.legend(frameon=False, fontsize=8, loc="upper right")
+        return stat_resp, move_resp
+
+    def save_current_psth(_event: object) -> None:
+        ui = max(0, min(idx, len(unit_ids) - 1))
+        uid = unit_ids[ui]
+        save_path = (
+            export_dir / f"manual_psth_{args.subject}_{args.session}_unit{uid}.pdf"
+        )
+        export_fig = Figure(figsize=(6.5, 4.2))
+        FigureCanvasAgg(export_fig)
+        export_ax = export_fig.add_subplot(1, 1, 1)
+        stat_resp, move_resp = draw_psth(export_ax, ui, include_title=False)
+        delta = move_resp - stat_resp
+        export_ax.set_title(
+            f"Unit {uid} | stat={stat_resp:.2f} sp/s, "
+            f"move={move_resp:.2f} sp/s, Δ={delta:+.2f} sp/s"
+        )
+        export_fig.tight_layout()
+        export_fig.savefig(save_path, bbox_inches="tight")
+        print(f"Saved PSTH PDF: {save_path}")
+
+    def redraw() -> None:
+        nonlocal idx
+        idx = max(0, min(idx, len(unit_ids) - 1))
+        ui = idx
+        draw_psth(ax, ui)
 
         pick_text = (
             f"exc:{picks['excited']}  supp:{picks['suppressed']}  "
@@ -540,6 +693,7 @@ def main() -> None:
 
     fig.canvas.mpl_connect("key_press_event", on_key)
     jump_button.on_clicked(lambda _event: jump_to_next_incomplete())
+    save_button.on_clicked(save_current_psth)
     load_state()
     print(
         "Controls: left/right or j/l navigate | [/] same-cluster prev/next | "

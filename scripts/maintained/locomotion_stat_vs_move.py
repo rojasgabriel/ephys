@@ -1,12 +1,16 @@
 """Behavior + stat-vs-move summary for GRB006 and GRB058.
 
-Builds a 6x3 figure:
-  Row 0: GRB006 behavior summary
-  Row 1: GRB006 example units
-  Row 2: GRB006 all/low/high stat-vs-move scatters
-  Row 3: GRB058 behavior summary
-  Row 4: GRB058 example units
-  Row 5: GRB058 all/low/high stat-vs-move scatters
+This is the canonical locomotion entrypoint. It writes three PDF outputs:
+  - figures/locomotion/scatter.pdf
+  - figures/locomotion/overlay.pdf
+  - figures/locomotion/timing_ctrl.pdf
+
+Main comparison:
+  - GRB006: 3rd stationary vs first movement
+  - GRB058: last stationary vs first movement
+
+Quality gate:
+  - baseline-only soft gate; units must rise above baseline in at least one condition
 """
 
 import pickle
@@ -54,29 +58,14 @@ MAIN_ANCHOR_CONFIG = {
 }
 SUMMARY_OFFSET_WINDOW_S = (0.5, 0.7)
 SUMMARY_OFFSET_WIGGLE_S = 0.1
-
-
-def _anchor_name(stationary_index: int | None) -> str:
-    if stationary_index is None:
-        return "lastStat"
-    n = stationary_index + 1
-    if 10 <= (n % 100) <= 20:
-        suffix = "th"
-    else:
-        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
-    return f"{n}{suffix}Stat"
-
-
-RUN_TAG = (
-    f"grb006-{_anchor_name(MAIN_ANCHOR_CONFIG['GRB006']['stationary_index'])}"
-    f"_grb058-{_anchor_name(MAIN_ANCHOR_CONFIG['GRB058']['stationary_index'])}"
-)
 FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/locomotion")
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 
 OUT_PATH = FIGURE_DIR / "scatter.pdf"
 OUT_PATH_OVERLAY = FIGURE_DIR / "overlay.pdf"
+OUT_PATH_OVERLAY_WAVEFORM = FIGURE_DIR / "overlay_waveform_split.pdf"
 OUT_PATH_OVERLAY_SUMMARY = FIGURE_DIR / "timing_ctrl.pdf"
+NARROW_BROAD_MS = 0.4
 
 
 @dataclass
@@ -97,11 +86,10 @@ class SessionInputs:
     session: str
     unit_ids: list[int]
     spike_times: list[np.ndarray]
-    unit_depth_um: np.ndarray
+    spike_duration_ms: np.ndarray
     first_stim_times: np.ndarray
     trial_df: pd.DataFrame
     trial_ts: pd.DataFrame
-    classified_trial_rates: pd.Series
 
 
 @dataclass
@@ -110,14 +98,12 @@ class SessionAnalysis:
     session: str
     unit_ids: list[int]
     spike_times: list[np.ndarray]
-    unit_depth_um: np.ndarray
+    spike_duration_ms: np.ndarray
     behavior: BehaviorSummary
-    paired_trial_df: pd.DataFrame
     bin_centers: np.ndarray
     paired_last_stat: np.ndarray
     paired_first_move: np.ndarray
     stationary_label: str
-    paired_trial_rates: np.ndarray
     peth_stat_all: np.ndarray
     peth_move_all: np.ndarray
     stat_trial_matrix: np.ndarray
@@ -156,6 +142,15 @@ class ComparisonDef:
     wiggle_room_s: float | None = None
 
 
+@dataclass(frozen=True)
+class ComparisonPairs:
+    stat_times: np.ndarray
+    move_times: np.ndarray
+    stat_trial_idx: np.ndarray
+    move_trial_idx: np.ndarray
+    stationary_label: str
+
+
 def ordinal_label(n: int) -> str:
     if 10 <= (n % 100) <= 20:
         suffix = "th"
@@ -166,7 +161,7 @@ def ordinal_label(n: int) -> str:
 
 def extract_session_conditioned_anchors(
     trial_ts: pd.DataFrame, stationary_index: int | None
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+) -> ComparisonPairs:
     has_move = trial_ts["movement_stims"].apply(lambda x: len(x) > 0)
     if stationary_index is None:
         has_stat = trial_ts["stationary_stims"].apply(lambda x: len(x) > 0)
@@ -191,7 +186,13 @@ def extract_session_conditioned_anchors(
         dtype=float,
     )
     paired_trial_idx = paired_trials["trial_idx"].to_numpy(dtype=int)
-    return paired_stat, paired_first_move, paired_trial_idx, stationary_label
+    return ComparisonPairs(
+        stat_times=paired_stat,
+        move_times=paired_first_move,
+        stat_trial_idx=paired_trial_idx,
+        move_trial_idx=paired_trial_idx,
+        stationary_label=stationary_label,
+    )
 
 
 def trial_start_from_row(row: pd.Series) -> float:
@@ -209,7 +210,7 @@ def extract_offset_matched_anchors(
     trial_ts: pd.DataFrame,
     offset_window_s: tuple[float, float],
     wiggle_room_s: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+) -> ComparisonPairs:
     lo, hi = offset_window_s
     records = []
     for _, row in trial_ts.iterrows():
@@ -250,11 +251,12 @@ def extract_offset_matched_anchors(
 
     stims_offset_df = pd.DataFrame(records)
     if stims_offset_df.empty:
-        return (
-            np.array([]),
-            np.array([]),
-            np.array([], dtype=int),
-            "offset-matched 0.5-0.7 s",
+        return ComparisonPairs(
+            stat_times=np.array([]),
+            move_times=np.array([]),
+            stat_trial_idx=np.array([], dtype=int),
+            move_trial_idx=np.array([], dtype=int),
+            stationary_label="offset-matched 0.5-0.7 s",
         )
 
     matched_pairs_df = find_unique_cross_trial_offset_pairs(
@@ -262,24 +264,28 @@ def extract_offset_matched_anchors(
         wiggle_room=wiggle_room_s,
     )
     if matched_pairs_df.empty:
-        return (
-            np.array([]),
-            np.array([]),
-            np.array([], dtype=int),
-            "offset-matched 0.5-0.7 s",
+        return ComparisonPairs(
+            stat_times=np.array([]),
+            move_times=np.array([]),
+            stat_trial_idx=np.array([], dtype=int),
+            move_trial_idx=np.array([], dtype=int),
+            stationary_label="offset-matched 0.5-0.7 s",
         )
 
-    paired_stat = matched_pairs_df["stat_stim_time"].to_numpy(dtype=float)
-    paired_move = matched_pairs_df["move_stim_time"].to_numpy(dtype=float)
-    paired_idx = matched_pairs_df["move_trial_idx"].to_numpy(dtype=int)
     label = f"offset-matched {lo:.1f}-{hi:.1f} s"
-    return paired_stat, paired_move, paired_idx, label
+    return ComparisonPairs(
+        stat_times=matched_pairs_df["stat_stim_time"].to_numpy(dtype=float),
+        move_times=matched_pairs_df["move_stim_time"].to_numpy(dtype=float),
+        stat_trial_idx=matched_pairs_df["stat_trial_idx"].to_numpy(dtype=int),
+        move_trial_idx=matched_pairs_df["move_trial_idx"].to_numpy(dtype=int),
+        stationary_label=label,
+    )
 
 
 def extract_comparison_anchors(
     inputs: SessionInputs,
     comparison: ComparisonDef,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+) -> ComparisonPairs:
     if comparison.mode == "indexed_stationary":
         stationary_index = None
         if comparison.stationary_index_by_subject is not None:
@@ -312,18 +318,50 @@ def load_local_spike_times(
     return unit_ids, spike_times
 
 
+def fetch_spike_duration_ms(
+    subject: str, session: str, unit_ids: list[int]
+) -> np.ndarray:
+    from labdata.schema import EphysRecording, SpikeSorting, UnitCount, UnitMetrics
+
+    sess_q = (
+        SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'
+    ).proj()
+    good_ids = (
+        sess_q * (UnitCount.Unit & "unit_criteria_id = 1" & "passes = 1")
+    ).fetch("subject_name", "session_name", "unit_id", as_dict=True)
+    metric_rows = pd.DataFrame(
+        ((SpikeSorting.Unit & good_ids) * UnitMetrics).fetch(
+            "unit_id", "spike_duration", as_dict=True
+        )
+    )
+    if metric_rows.empty:
+        return np.full(len(unit_ids), np.nan, dtype=float)
+
+    srate = float((EphysRecording.ProbeSetting() & sess_q).fetch("sampling_rate")[0])
+    med = metric_rows["spike_duration"].dropna()
+    if len(med) and med.median() > 100:
+        metric_rows["spike_duration_ms"] = (
+            metric_rows["spike_duration"] / srate * 1000.0
+        )
+    else:
+        metric_rows["spike_duration_ms"] = metric_rows["spike_duration"]
+    dur_map = dict(
+        zip(
+            metric_rows["unit_id"].astype(int).tolist(),
+            metric_rows["spike_duration_ms"].astype(float).tolist(),
+        )
+    )
+    return np.array([dur_map.get(int(uid), np.nan) for uid in unit_ids], dtype=float)
+
+
 def load_local_trial_ts(
     trial_ts_path: Path,
-) -> tuple[pd.DataFrame, np.ndarray, pd.Series]:
+) -> tuple[pd.DataFrame, np.ndarray]:
     trial_ts = pd.read_pickle(trial_ts_path).reset_index(drop=True).copy()
     trial_ts["trial_idx"] = np.arange(len(trial_ts))
     first_stim_times = trial_ts["first_stim_ts"].to_numpy(dtype=float)
     first_stim_times = first_stim_times[np.isfinite(first_stim_times)]
-    classified_trial_rates = pd.Series(
-        trial_ts["trial_rate"].to_numpy(dtype=float),
-        index=trial_ts["trial_idx"].to_numpy(),
-    )
-    return trial_ts, first_stim_times, classified_trial_rates
+    return trial_ts, first_stim_times
 
 
 def enrich_trial_df(trial_df: pd.DataFrame) -> pd.DataFrame:
@@ -408,7 +446,7 @@ def fetch_chipmunk_session_trials(subject: str, session: str) -> pd.DataFrame:
 
 def load_db_behavior(
     subject: str, session: str
-) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, pd.Series]:
+) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
     from ephys.src.utils.utils_IO import fetch_session_events, fetch_trial_metadata
 
     align_ev = fetch_session_events(subject, session)
@@ -421,12 +459,7 @@ def load_db_behavior(
         drop=True
     )
     first_stim_times = np.asarray(align_ev["first_stim_ev_15ms"], dtype=float)
-    classified_trial_rates = (
-        trial_df["stim_rate_vision"]
-        .iloc[trial_ts["trial_idx"].to_numpy()]
-        .set_axis(trial_ts["trial_idx"].to_numpy())
-    )
-    return trial_df, trial_ts, first_stim_times, classified_trial_rates
+    return trial_df, trial_ts, first_stim_times
 
 
 def load_local_spikes_db_behavior(
@@ -436,24 +469,13 @@ def load_local_spikes_db_behavior(
     spike_times_path: Path,
     sampling_rate: float = 30000.0,
 ):
-    from ephys.src.utils.utils_IO import fetch_good_units_with_depth
-
     print(f"\nLoading hybrid session: {subject} {session}")
     trial_df = fetch_chipmunk_session_trials(subject, session)
-    trial_ts, first_stim_times, classified_trial_rates = load_local_trial_ts(
-        trial_ts_path
-    )
+    trial_ts, first_stim_times = load_local_trial_ts(trial_ts_path)
     matched_full_idx = align_local_trials_to_full_trial_df(trial_ts, trial_df)
     trial_ts["trial_idx"] = matched_full_idx
-    classified_trial_rates = pd.Series(
-        trial_df["stim_rate_vision"].iloc[matched_full_idx].to_numpy(dtype=float),
-        index=matched_full_idx,
-    )
     unit_ids, spike_times = load_local_spike_times(spike_times_path, sampling_rate)
-    _, depth_per_unit = fetch_good_units_with_depth(subject, session)
-    unit_depth_um = np.array(
-        [depth_per_unit.get(uid, np.nan) for uid in unit_ids], dtype=float
-    )
+    spike_duration_ms = fetch_spike_duration_ms(subject, session, unit_ids)
     print(
         f"  Units: {len(unit_ids)}  Trials: {len(trial_df)}  "
         f"Paired trials: {len(trial_ts)}  First stims: {len(first_stim_times)}"
@@ -463,25 +485,22 @@ def load_local_spikes_db_behavior(
         session=session,
         unit_ids=unit_ids,
         spike_times=spike_times,
-        unit_depth_um=unit_depth_um,
+        spike_duration_ms=spike_duration_ms,
         first_stim_times=first_stim_times,
         trial_df=trial_df,
         trial_ts=trial_ts,
-        classified_trial_rates=classified_trial_rates,
     )
 
 
 def load_db_session(subject: str, session: str):
-    from ephys.src.utils.utils_IO import fetch_good_units_with_depth
+    from ephys.src.utils.utils_IO import fetch_good_units
 
     print(f"\nLoading DB session: {subject} {session}")
-    trial_df, trial_ts, first_stim_times, classified_trial_rates = load_db_behavior(
-        subject, session
-    )
-    st_per_unit, depth_per_unit = fetch_good_units_with_depth(subject, session)
+    trial_df, trial_ts, first_stim_times = load_db_behavior(subject, session)
+    st_per_unit = fetch_good_units(subject, session)
     unit_ids = list(st_per_unit.keys())
     spike_times = list(st_per_unit.values())
-    unit_depth_um = np.array([depth_per_unit[uid] for uid in unit_ids], dtype=float)
+    spike_duration_ms = fetch_spike_duration_ms(subject, session, unit_ids)
     print(
         f"  Units: {len(unit_ids)}  Trials: {len(trial_df)}  "
         f"Paired trials: {len(trial_ts)}  First stims: {len(first_stim_times)}"
@@ -491,11 +510,10 @@ def load_db_session(subject: str, session: str):
         session=session,
         unit_ids=unit_ids,
         spike_times=spike_times,
-        unit_depth_um=unit_depth_um,
+        spike_duration_ms=spike_duration_ms,
         first_stim_times=first_stim_times,
         trial_df=trial_df,
         trial_ts=trial_ts,
-        classified_trial_rates=classified_trial_rates,
     )
 
 
@@ -634,9 +652,20 @@ def split_resp_per_unit(spike_times, stat_times, move_times, bc):
     )
 
 
+def pair_rate_masks(
+    stat_rates: np.ndarray,
+    move_rates: np.ndarray,
+    rate_threshold_hz: float = RATE_SPLIT_HZ,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    valid = np.isfinite(stat_rates) & np.isfinite(move_rates)
+    low = valid & (stat_rates < rate_threshold_hz) & (move_rates < rate_threshold_hz)
+    high = valid & (stat_rates > rate_threshold_hz) & (move_rates > rate_threshold_hz)
+    mixed = valid & ~(low | high)
+    return low, high, mixed
+
+
 def behavior_summary_from_inputs(
     trial_df: pd.DataFrame,
-    trial_ts: pd.DataFrame,
     paired_trial_idx: np.ndarray,
 ) -> BehaviorSummary:
     rewarded = trial_df["rewarded"].to_numpy() == 1
@@ -777,20 +806,22 @@ def finite_or(value: float, default: float) -> float:
     return float(value) if np.isfinite(value) else default
 
 
-def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
+def analyze_session(
+    inputs: SessionInputs,
+    stationary_index: int | None = None,
+):
     print(f"Analyzing {inputs.subject} {inputs.session}")
-    paired_last_stat, paired_first_move, paired_trial_idx, stationary_label = (
-        extract_session_conditioned_anchors(
-            inputs.trial_ts,
-            stationary_index=stationary_index,
-        )
+    pairs = extract_session_conditioned_anchors(
+        inputs.trial_ts,
+        stationary_index=stationary_index,
     )
-    print(f"  Trials with {stationary_label}+move stims: {len(paired_trial_idx)}")
+    print(
+        f"  Trials with {pairs.stationary_label}+move stims: "
+        f"{len(pairs.move_trial_idx)}"
+    )
 
-    behavior = behavior_summary_from_inputs(
-        inputs.trial_df, inputs.trial_ts, paired_trial_idx
-    )
-    paired_trial_df = inputs.trial_df.iloc[paired_trial_idx].copy()
+    behavior = behavior_summary_from_inputs(inputs.trial_df, pairs.move_trial_idx)
+    paired_trial_df = inputs.trial_df.iloc[pairs.move_trial_idx].copy()
 
     peth_all, bin_edges, _ = compute_population_peth(
         spike_times_per_unit=inputs.spike_times,
@@ -814,12 +845,12 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
 
     peth_stat_all, _, bc = compute_population_peth(
         inputs.spike_times,
-        paired_last_stat,
+        pairs.stat_times,
         **PETH_KWARGS,
     )
     peth_move_all, _, _ = compute_population_peth(
         inputs.spike_times,
-        paired_first_move,
+        pairs.move_times,
         **PETH_KWARGS,
     )
 
@@ -848,7 +879,7 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
         f"supp={sig_supp.sum()}  no-effect={nonsig.sum()}"
     )
 
-    base_mask = (bc >= -0.04) & (bc < 0.0)
+    base_mask = (bc >= BASELINE_WINDOW[0]) & (bc < BASELINE_WINDOW[1])
     effect_mask = (bc >= RESP_WINDOW[0]) & (bc < RESP_WINDOW[1])
 
     mean_stat_all = peth_stat_all.mean(axis=1)
@@ -946,25 +977,29 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
         ex_noeffect_idx = pick_best_example(good_idx, noeff_scores[good_idx], used)
 
     trial_rates = paired_trial_df["stim_rate_vision"].to_numpy(dtype=float)
-    valid_rate_mask = np.isfinite(trial_rates)
     rate_threshold_hz = RATE_SPLIT_HZ
-    low_mask = valid_rate_mask & (trial_rates < rate_threshold_hz)
-    high_mask = valid_rate_mask & (trial_rates > rate_threshold_hz)
+    low_mask, high_mask, mixed_mask = pair_rate_masks(
+        trial_rates,
+        trial_rates,
+        rate_threshold_hz=rate_threshold_hz,
+    )
     print(
         f"  Rate split: threshold={rate_threshold_hz:.1f} Hz  "
         f"low={low_mask.sum()} trials  high={high_mask.sum()} trials"
     )
+    if mixed_mask.any():
+        print(f"  Excluded {mixed_mask.sum()} threshold-boundary trials from low/high")
 
     pk_stat_low, pk_move_low, sem_stat_low, sem_move_low = split_resp_per_unit(
         inputs.spike_times,
-        paired_last_stat[low_mask],
-        paired_first_move[low_mask],
+        pairs.stat_times[low_mask],
+        pairs.move_times[low_mask],
         bc,
     )
     pk_stat_high, pk_move_high, sem_stat_high, sem_move_high = split_resp_per_unit(
         inputs.spike_times,
-        paired_last_stat[high_mask],
-        paired_first_move[high_mask],
+        pairs.stat_times[high_mask],
+        pairs.move_times[high_mask],
         bc,
     )
     # Soft baseline gate uses the same per-unit baseline rates from the
@@ -991,14 +1026,12 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
         session=inputs.session,
         unit_ids=inputs.unit_ids,
         spike_times=inputs.spike_times,
-        unit_depth_um=inputs.unit_depth_um,
+        spike_duration_ms=inputs.spike_duration_ms,
         behavior=behavior,
-        paired_trial_df=paired_trial_df,
         bin_centers=bc,
-        paired_last_stat=paired_last_stat,
-        paired_first_move=paired_first_move,
-        stationary_label=stationary_label,
-        paired_trial_rates=trial_rates,
+        paired_last_stat=pairs.stat_times,
+        paired_first_move=pairs.move_times,
+        stationary_label=pairs.stationary_label,
         peth_stat_all=peth_stat_all,
         peth_move_all=peth_move_all,
         stat_trial_matrix=stat_trial_matrix,
@@ -1022,25 +1055,22 @@ def analyze_session(inputs: SessionInputs, stationary_index: int | None = None):
         rate_threshold_hz=rate_threshold_hz,
         low_count=int(low_mask.sum()),
         high_count=int(high_mask.sum()),
-        paired_trial_count=len(paired_last_stat),
+        paired_trial_count=len(pairs.stat_times),
         n_units=len(inputs.unit_ids),
     )
 
 
-def analyze_comparison(inputs: SessionInputs, comparison: ComparisonDef):
-    paired_stat, paired_move, paired_trial_idx, stationary_label = (
-        extract_comparison_anchors(
-            inputs,
-            comparison,
-        )
-    )
-    paired_trial_df = inputs.trial_df.iloc[paired_trial_idx].copy()
+def analyze_comparison(
+    inputs: SessionInputs,
+    comparison: ComparisonDef,
+):
+    pairs = extract_comparison_anchors(inputs, comparison)
     _empty2 = np.zeros((2, 0))
-    if len(paired_stat) == 0 or len(paired_move) == 0:
+    if len(pairs.stat_times) == 0 or len(pairs.move_times) == 0:
         return {
             "subject": inputs.subject,
             "comparison": comparison,
-            "stationary_label": stationary_label,
+            "stationary_label": pairs.stationary_label,
             "pk_stat_all": np.array([]),
             "pk_move_all": np.array([]),
             "bl_stat_all": np.array([]),
@@ -1064,12 +1094,12 @@ def analyze_comparison(inputs: SessionInputs, comparison: ComparisonDef):
 
     peth_stat_all, _, bc = compute_population_peth(
         inputs.spike_times,
-        paired_stat,
+        pairs.stat_times,
         **PETH_KWARGS,
     )
     peth_move_all, _, _ = compute_population_peth(
         inputs.spike_times,
-        paired_move,
+        pairs.move_times,
         **PETH_KWARGS,
     )
 
@@ -1083,26 +1113,34 @@ def analyze_comparison(inputs: SessionInputs, comparison: ComparisonDef):
     sem_stat_all = np.vstack(resp_sem_log_per_unit(peth_stat_all, bc))
     sem_move_all = np.vstack(resp_sem_log_per_unit(peth_move_all, bc))
 
-    trial_rates = paired_trial_df["stim_rate_vision"].to_numpy(dtype=float)
-    valid_rate_mask = np.isfinite(trial_rates)
-    low_mask = valid_rate_mask & (trial_rates < RATE_SPLIT_HZ)
-    high_mask = valid_rate_mask & (trial_rates > RATE_SPLIT_HZ)
+    stat_rates = inputs.trial_df.iloc[pairs.stat_trial_idx][
+        "stim_rate_vision"
+    ].to_numpy(dtype=float)
+    move_rates = inputs.trial_df.iloc[pairs.move_trial_idx][
+        "stim_rate_vision"
+    ].to_numpy(dtype=float)
+    low_mask, high_mask, mixed_mask = pair_rate_masks(stat_rates, move_rates)
+    if mixed_mask.any():
+        print(
+            f"  {inputs.subject} {comparison.key}: excluded {mixed_mask.sum()} "
+            "cross-stratum or threshold-boundary offset-matched pairs from low/high panels"
+        )
     pk_stat_low, pk_move_low, sem_stat_low, sem_move_low = split_resp_per_unit(
         inputs.spike_times,
-        paired_stat[low_mask],
-        paired_move[low_mask],
+        pairs.stat_times[low_mask],
+        pairs.move_times[low_mask],
         bc,
     )
     pk_stat_high, pk_move_high, sem_stat_high, sem_move_high = split_resp_per_unit(
         inputs.spike_times,
-        paired_stat[high_mask],
-        paired_move[high_mask],
+        pairs.stat_times[high_mask],
+        pairs.move_times[high_mask],
         bc,
     )
     return {
         "subject": inputs.subject,
         "comparison": comparison,
-        "stationary_label": stationary_label,
+        "stationary_label": pairs.stationary_label,
         "pk_stat_all": pk_stat_all,
         "pk_move_all": pk_move_all,
         "bl_stat_all": bl_stat_all,
@@ -1120,7 +1158,7 @@ def analyze_comparison(inputs: SessionInputs, comparison: ComparisonDef):
         "sem_move_high": sem_move_high,
         "low_count": int(low_mask.sum()),
         "high_count": int(high_mask.sum()),
-        "paired_trial_count": len(paired_stat),
+        "paired_trial_count": len(pairs.stat_times),
         "n_units": len(inputs.unit_ids),
     }
 
@@ -1553,6 +1591,121 @@ def build_overlay_scatter_figure(results):
     return fig
 
 
+def subset_sem(sem_arr: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    if sem_arr.size == 0:
+        return sem_arr
+    return sem_arr[:, mask]
+
+
+def waveform_class_mask(result: SessionAnalysis, cell_class: str) -> np.ndarray:
+    finite = np.isfinite(result.spike_duration_ms)
+    if cell_class == "FS":
+        return finite & (result.spike_duration_ms <= NARROW_BROAD_MS)
+    if cell_class == "RS":
+        return finite & (result.spike_duration_ms > NARROW_BROAD_MS)
+    raise ValueError(f"Unknown cell class: {cell_class}")
+
+
+def build_overlay_waveform_split_figure(results):
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9.5))
+    subject_colors = ["#1f77b4", "#d62728"]
+    panel_defs = [
+        (
+            "All rates",
+            lambda r, mask: (
+                r.pk_stat_all[mask],
+                r.pk_move_all[mask],
+                r.paired_trial_count,
+                subset_sem(r.sem_stat_all, mask),
+                subset_sem(r.sem_move_all, mask),
+            ),
+        ),
+        (
+            "Low rate",
+            lambda r, mask: (
+                r.pk_stat_low[mask],
+                r.pk_move_low[mask],
+                r.low_count,
+                subset_sem(r.sem_stat_low, mask),
+                subset_sem(r.sem_move_low, mask),
+            ),
+        ),
+        (
+            "High rate",
+            lambda r, mask: (
+                r.pk_stat_high[mask],
+                r.pk_move_high[mask],
+                r.high_count,
+                subset_sem(r.sem_stat_high, mask),
+                subset_sem(r.sem_move_high, mask),
+            ),
+        ),
+    ]
+
+    for row_idx, cell_class in enumerate(["FS", "RS"]):
+        for col_idx, (panel_name, getter) in enumerate(panel_defs):
+            ax = axes[row_idx, col_idx]
+            panel_specs = []
+            count_lines = []
+            for result, color in zip(results, subject_colors):
+                mask = waveform_class_mask(result, cell_class)
+                pk_s, pk_m, n_trials, sem_s, sem_m = getter(result, mask)
+                label = f"{result.subject} {cell_class}"
+                panel_specs.append((pk_s, pk_m, color, label, sem_s, sem_m))
+                count_lines.append(
+                    f"{result.subject}: units={int(mask.sum())}, trials={n_trials}"
+                )
+            overlay_scatter_log(ax, panel_specs, panel_name)
+            if row_idx != 1:
+                ax.set_xlabel("")
+            if col_idx != 0:
+                ax.set_ylabel("")
+            ax.text(
+                0.97,
+                0.03,
+                "\n".join(count_lines),
+                transform=ax.transAxes,
+                ha="right",
+                va="bottom",
+                fontsize=7,
+                bbox=dict(
+                    boxstyle="round,pad=0.25", facecolor="white", alpha=0.85, lw=0.0
+                ),
+            )
+        axes[row_idx, 0].text(
+            -0.32,
+            1.18,
+            f"{cell_class} units",
+            transform=axes[row_idx, 0].transAxes,
+            ha="left",
+            va="top",
+            fontsize=10,
+            fontweight="bold",
+            clip_on=False,
+        )
+        axes[row_idx, 0].text(
+            -0.32,
+            1.07,
+            f"putative split by spike duration ({'≤' if cell_class == 'FS' else '>'} {NARROW_BROAD_MS:.1f} ms)",
+            transform=axes[row_idx, 0].transAxes,
+            ha="left",
+            va="top",
+            fontsize=7,
+            clip_on=False,
+        )
+
+    axes[0, 0].legend(frameon=False, fontsize=8, loc="upper left")
+    fig.suptitle(
+        "Cross-subject overlay: locomotion response split by putative FS/RS waveform class",
+        fontsize=12,
+        y=0.98,
+    )
+    fig.subplots_adjust(
+        left=0.11, right=0.98, bottom=0.08, top=0.90, wspace=0.28, hspace=0.30
+    )
+    return fig
+
+
 def build_overlay_summary_figure(summary_rows):
     n_rows = len(summary_rows)
     fig, axes = plt.subplots(n_rows, 3, figsize=(15, 4 * n_rows))
@@ -1708,6 +1861,10 @@ def main():
     save_pdf(fig_overlay, OUT_PATH_OVERLAY)
     plt.close(fig_overlay)
 
+    fig_overlay_waveform = build_overlay_waveform_split_figure(results)
+    save_pdf(fig_overlay_waveform, OUT_PATH_OVERLAY_WAVEFORM)
+    plt.close(fig_overlay_waveform)
+
     summary_comparisons = [
         ComparisonDef(
             key="last_vs_first",
@@ -1733,7 +1890,10 @@ def main():
         ComparisonDef(
             key="offset_500_700ms",
             row_label="Row 4: strict 0.5-0.7 s control",
-            description="Closest offset-matched stationary and movement pulses in 0.5-0.7 s.",
+            description=(
+                "Closest offset-matched stationary and movement pulses in 0.5-0.7 s; "
+                "low/high panels keep only pairs where both source trials fall in the same rate stratum."
+            ),
             mode="offset_matched",
             offset_window_s=SUMMARY_OFFSET_WINDOW_S,
             wiggle_room_s=SUMMARY_OFFSET_WIGGLE_S,

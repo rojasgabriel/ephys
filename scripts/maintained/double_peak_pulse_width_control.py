@@ -1,8 +1,8 @@
-"""Double-peak PSTH figure for the Dario email (legacy version).
+"""Secondary pulse-width control for the double-peak analysis surface.
 
-This script predates dario_double_peak_story.py. Kept for the 15ms vs 30ms
-pulse-split visualization (the "second peak does NOT shift with pulse width"
-finding). For the canonical Dario story figure see dario_double_peak_story.py.
+This script is kept because it isolates the 15 ms vs 30 ms pulse-width
+comparison as its own supporting figure. Use `double_peak_story.py` for
+the collaborator-facing summary figure.
 
 Sessions in current scope: GRB058 only (longstim sessions for 15 vs 30 ms).
 GRB059 and GRB060 are not in the current analysis scope.
@@ -29,6 +29,11 @@ from ephys.src.config.double_peak import (
     PETH_KWARGS,
     SELECTIVITY_KWARGS,
 )
+from ephys.src.utils.double_peak_helpers import (
+    baseline_mean as _baseline_mean,
+    mark_peaks,
+    plot_mean_sem_trace as plot_trace,
+)
 from ephys.src.utils.utils_IO import fetch_good_units, fetch_session_events
 from ephys.src.utils.utils_analysis import (
     classify_peak_count,
@@ -38,15 +43,6 @@ from ephys.src.utils.utils_analysis import (
 
 GRB058_SESSIONS = ["20260312_134952", "20260319_131303"]
 OUT_PATH = "/Users/gabriel/lib/ephys/figures/double_peak/pulse_split.pdf"
-
-
-# ---------------------------------------------------------------------------
-# Helper functions
-# ---------------------------------------------------------------------------
-def _baseline_mean(peth_trials, bin_centers):
-    """Mean firing rate over BASELINE_WINDOW, trial-averaged."""
-    mask = (bin_centers >= BASELINE_WINDOW[0]) & (bin_centers < BASELINE_WINDOW[1])
-    return peth_trials.mean(axis=0)[mask].mean()
 
 
 def _load_session(subject, session):
@@ -65,19 +61,6 @@ def _load_session(subject, session):
         peth_15, bin_edges, unit_ids=unit_ids, **SELECTIVITY_KWARGS
     )
     return unit_ids, spike_times, align_ev, peth_15, bin_edges, bin_centers, masks
-
-
-def plot_trace(ax, bin_centers, peth_trials, color, label):
-    mean = peth_trials.mean(axis=0)
-    sem = peth_trials.std(axis=0) / np.sqrt(peth_trials.shape[0])
-    ax.plot(bin_centers, mean, color=color, linewidth=1.5, label=label)
-    ax.fill_between(bin_centers, mean - sem, mean + sem, alpha=0.25, color=color)
-    return mean
-
-
-def mark_peaks(ax, peak_row, color):
-    for pt, ph in zip(peak_row["peak_times"], peak_row["peak_heights"]):
-        ax.plot(pt, ph, "v", color=color, markersize=7, zorder=5)
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +90,7 @@ for session in GRB058_SESSIONS:
     for uid in candidate_ids:
         i = exc_ids.index(uid)
         peak_row = peaks_df[peaks_df["unit"] == uid].iloc[0]
-        base = _baseline_mean(exc_peth[i], bin_centers)
+        base = _baseline_mean(exc_peth[i], bin_centers, BASELINE_WINDOW)
         heights_above = [h - base for h in peak_row["peak_heights"]]
         if min(heights_above) >= MIN_PEAK_HEIGHT_ABS:
             double_ids.append(uid)
@@ -196,7 +179,7 @@ for subject, session in SP_ANIMAL_SESSIONS:
         robust_single_ids,
         key=lambda uid: (
             exc_peth[exc_ids.index(uid)].mean(0).max()
-            - _baseline_mean(exc_peth[exc_ids.index(uid)], bin_centers)
+            - _baseline_mean(exc_peth[exc_ids.index(uid)], bin_centers, BASELINE_WINDOW)
         ),
     )
     i = exc_ids.index(best)
@@ -294,7 +277,7 @@ axes[1, 0].annotate(
 
 fig.suptitle(
     "Double-peaked V1 responses to LED flashes  —  15 ms vs 30 ms pulse width\n"
-    "Triangles mark detected peaks  ▼",
+    "Used as a control against a simple pulse-offset explanation; triangles mark detected peaks",
     fontsize=10,
     y=1.02,
 )

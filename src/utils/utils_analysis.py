@@ -64,10 +64,10 @@ def compute_population_peth(
         binwidth_ms=binwidth_ms,
         kernel=kernel,
     )
-    # Convert spike counts per bin to firing rate (sp/s)
-    peth = peth / (binwidth_ms / 1000.0)
-    # Sanity guard: peth should be in sp/s. Values > 5000 sp/s are implausible
-    # for V1 and usually indicate the raw counts were passed through already.
+    # spks.population_peth already returns firing rate in sp/s.
+    # Do not divide by bin width again here.
+    # Sanity guard: values > 5000 sp/s are implausible for V1 and usually
+    # indicate a bad input scale or an extra downstream rescaling.
     if peth.size > 0 and peth.max() > 5000:
         raise AssertionError(
             f"peth.max()={peth.max():.1f} sp/s — implausibly high. "
@@ -662,9 +662,6 @@ def compute_stim_response_for_trial_subset(
     for stationary and movement conditions using matched unique pairs.
     Returns a dict with keys 'Stationary' and 'Movement'.
     """
-    # TODO: make this function general for comparing any two subsets of trials
-    from spks.event_aligned import population_peth  # type: ignore
-
     data = trial_subset.copy()
     stims_offset_df = calculate_stim_offsets(
         data, trial_start_col="center_port_entries"
@@ -681,23 +678,23 @@ def compute_stim_response_for_trial_subset(
     stat_alignment_times = matched_pairs_df["stat_stim_time"].values
     move_alignment_times = matched_pairs_df["move_stim_time"].values
 
-    pop_peth_stat, timebin_edges_stat, _ = population_peth(
-        all_spike_times=spike_times_per_unit,
+    pop_peth_stat, timebin_edges_stat, _ = compute_population_peth(
+        spike_times_per_unit=spike_times_per_unit,
         alignment_times=stat_alignment_times,
         pre_seconds=pre_seconds,
         post_seconds=post_seconds,
         binwidth_ms=binwidth_ms,
-        pad=0,
-        kernel=None,
+        t_rise=None,
+        t_decay=None,
     )
-    pop_peth_move, _, _ = population_peth(
-        all_spike_times=spike_times_per_unit,
+    pop_peth_move, _, _ = compute_population_peth(
+        spike_times_per_unit=spike_times_per_unit,
         alignment_times=move_alignment_times,
         pre_seconds=pre_seconds,
         post_seconds=post_seconds,
         binwidth_ms=binwidth_ms,
-        pad=0,
-        kernel=None,
+        t_rise=None,
+        t_decay=None,
     )
 
     # Define response window based on timebins (use stationary timebins as reference)
@@ -712,13 +709,13 @@ def compute_stim_response_for_trial_subset(
         np.mean(pop_peth_move[:, :, stimulus_window_bool], axis=1), axis=1
     )
 
-    n_neurons = pop_peth_stat.shape[1]
+    n_trials = pop_peth_stat.shape[1]
     stationary_sem = np.std(
         np.max(pop_peth_stat[:, :, stimulus_window_bool], axis=2), axis=1
-    ) / np.sqrt(n_neurons)
+    ) / np.sqrt(n_trials)
     running_sem = np.std(
         np.max(pop_peth_move[:, :, stimulus_window_bool], axis=2), axis=1
-    ) / np.sqrt(n_neurons)
+    ) / np.sqrt(n_trials)
     return {
         "stationary": stationary_response,
         "stationary_sem": stationary_sem,

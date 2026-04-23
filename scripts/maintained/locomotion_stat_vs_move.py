@@ -1,6 +1,6 @@
 """Behavior + stat-vs-move summary for GRB006 and GRB058.
 
-This is the canonical locomotion entrypoint. It writes three PDF outputs:
+This is the stricter locomotion control/comparison surface. It writes three PDF outputs:
   - figures/locomotion/scatter.pdf
   - figures/locomotion/overlay.pdf
   - figures/locomotion/timing_ctrl.pdf

@@ -1,14 +1,15 @@
-"""Canonical parameters for locomotion stat-vs-move analysis.
+"""Shared parameters for locomotion analyses.
 
-Last reviewed: 2026-04-19.
+Last reviewed: 2026-04-23.
 
-Aligned with double_peak.WINDOW for project-wide consistency. The same
-response window is used for SNR computation, statistical tests, and
-peak-centered measurements (no separate RESP_WINDOW vs EFFECT_WINDOW).
+These windows are shared by the primary Niell-style locomotion analysis and the
+older stricter task-matched control script.
 
-Baseline window matches double_peak.BASELINE_WINDOW.
+Only `PETH_KWARGS`, `BASELINE_WINDOW`, and `RESP_WINDOW` should be assumed to
+apply across locomotion analyses in general. The remaining constants are kept
+here for the older control script and rate-split figures.
 
-DO NOT define these inline in scripts. Import from here.
+DO NOT define shared locomotion windows inline in scripts. Import them here.
 """
 
 PETH_KWARGS = dict(
@@ -18,8 +19,10 @@ PETH_KWARGS = dict(
 )
 
 BASELINE_WINDOW = (-0.04, 0.0)
-RESP_WINDOW = (0.03, 0.12)  # SNR + effect tests + peak-window — single window
-PEAK_HALF_WINDOW_S = 0.015  # for peak-centered measurements
+RESP_WINDOW = (0.03, 0.12)
+
+# Control-script-specific constants used by locomotion_stat_vs_move.py.
+PEAK_HALF_WINDOW_S = 0.015
 
 QVAL_ALPHA = 0.05
 

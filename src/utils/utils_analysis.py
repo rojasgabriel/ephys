@@ -18,10 +18,10 @@ def compute_population_peth(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Compute population PETH aligned to event times.
 
-    The returned `peth` is in **sp/s** (firing rate), NOT counts. The raw
-    counts from spks.population_peth are divided by binwidth_ms/1000 before
-    returning. DO NOT re-divide downstream. A runtime assertion catches
-    accidental re-scaling (values > 5000 sp/s are implausible for V1).
+    This is a thin wrapper around `spks.event_aligned.population_peth` that
+    converts the returned per-bin spike counts to firing rates in **sp/s**.
+    DO NOT re-divide downstream. A runtime assertion catches accidental
+    re-scaling (values > 1000 sp/s are implausible for V1).
 
     WARNING on kernel behaviour: the alpha-function kernel built with
     `t_decay=0.025s` (a common default elsewhere) merges temporal features
@@ -56,7 +56,7 @@ def compute_population_peth(
             srate=1.0 / (binwidth_ms / 1000),
         )
 
-    peth, bin_edges, event_index = population_peth(
+    peth_counts, bin_edges, event_index = population_peth(
         all_spike_times=spike_times_per_unit,
         alignment_times=alignment_times,
         pre_seconds=pre_seconds,
@@ -64,11 +64,12 @@ def compute_population_peth(
         binwidth_ms=binwidth_ms,
         kernel=kernel,
     )
-    # spks.population_peth already returns firing rate in sp/s.
-    # Do not divide by bin width again here.
-    # Sanity guard: values > 5000 sp/s are implausible for V1 and usually
+
+    peth = peth_counts / (binwidth_ms / 1000.0)
+
+    # Sanity guard: values > 1000 sp/s are implausible for V1 and usually
     # indicate a bad input scale or an extra downstream rescaling.
-    if peth.size > 0 and peth.max() > 5000:
+    if peth.size > 0 and peth.max() > 1000:
         raise AssertionError(
             f"peth.max()={peth.max():.1f} sp/s — implausibly high. "
             "Did you accidentally pass counts instead of spike times, or "

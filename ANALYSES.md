@@ -14,32 +14,40 @@ All maintained figure scripts write PDF outputs under `figures/`.
 
 ### Locomotion
 
-`scripts/maintained/locomotion_stat_vs_move.py`
+Primary locomotion analysis:
+
+`scripts/supporting/locomotion_niell_style_fs_rs.py`
 
 Writes:
 
-- `figures/locomotion/scatter.pdf`
-- `figures/locomotion/overlay.pdf`
-- `figures/locomotion/timing_ctrl.pdf`
+- `figures/locomotion/niell_style_paired_last_stat_first_move_shared_stat_baseline.pdf`
+- `figures/locomotion/niell_style_paired_last_stat_first_move_shared_stat_baseline_no_waveform_split.pdf`
 
 Current maintained policy:
 
-- This is the only maintained locomotion entrypoint.
-- Baseline-only soft gate: a unit is analyzable if it rises above baseline in
-  at least one condition.
-- Main comparison:
-  - GRB006: `3rd stationary` vs `first movement`
-  - GRB058: `last stationary` vs `first movement`
-- Rate split: low `< 12 Hz`, high `> 12 Hz`
-- Offset-matched low/high panels keep only same-stratum pairs. Cross-stratum
-  and threshold-boundary pairs are excluded.
+- This is the canonical locomotion entrypoint.
+- Default baseline policy is now shared stationary baseline subtraction.
+- The maintained readout is the paired Niell-style comparison:
+  - `last stationary` vs `first movement`
+- Each condition keeps its own peak latency within `RESP_WINDOW`.
+- `--condition-specific-baseline` opts out of the default shared stationary
+  baseline subtraction.
+- The exported figure is a single cross-subject overlay:
+  - unit dots colored by subject with `alpha=0.2`
+  - `RS` units as circles and `FS` units as triangles
+  - one `RS` mean and one `FS` mean per subject with `95%` t-based confidence intervals in x and y
+  - subject colors taken from the `Set1` colormap
+  - no figure title, panel title, or annotation box
+- The script also writes a no-waveform-split companion figure with one mean per
+  subject and the same CI logic.
 
-Current verified snapshot from the 2026-04-20 live run:
+Stricter control surface:
 
-- GRB006 `20240821_121447`: `79%` above diagonal, `Δmedian=+2.36 sp/s`,
-  analyzable `n=168`
-- GRB058 `20260312_134952`: `72%` above diagonal, `Δmedian=+0.78 sp/s`,
-  analyzable `n=98`
+`scripts/maintained/locomotion_stat_vs_move.py`
+
+- This is no longer the main locomotion analysis.
+- It remains the stricter task-matched comparison surface with shared-latency
+  logic, baseline gating, and rate-split / timing-control figures.
 
 ### Double-Peak
 
@@ -51,7 +59,8 @@ Canonical parameters live in `src/config/double_peak.py`.
 - Selectivity: Wilcoxon + FDR
 - Height floor: both peaks must be at least `5 sp/s` above baseline
 
-`compute_population_peth` already returns `sp/s`. Do not rescale it.
+`compute_population_peth` converts the default `spks.population_peth` output to
+`sp/s`. Do not rescale it again downstream.
 
 Maintained scripts:
 

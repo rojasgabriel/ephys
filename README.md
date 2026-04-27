@@ -18,6 +18,12 @@ Install dependencies:
 
     uv sync
 
+Run the lightweight checks used by CI:
+
+    uvx ruff check .
+    uvx ruff format --check .
+    uv run python -m unittest discover -s tests
+
 Analysis entrypoints are grouped under `scripts/` by role:
 
 - `scripts/analyses/` — scripts that answer scientific questions or generate analysis figures

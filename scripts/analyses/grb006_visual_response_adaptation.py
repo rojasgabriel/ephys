@@ -1,7 +1,7 @@
 """Archived adaptation summary for GRB006 20240821_121447.
 
-This is a supporting local-data script, not part of the maintained figure
-surface. It summarizes how peak visual responses change across the first four
+This is a local-data analysis script, not part of the main figure surface. It
+summarizes how peak visual responses change across the first four
 stationary flashes and the first movement flash, with an additional split by
 response side.
 """
@@ -14,17 +14,16 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from ephys.src.utils.double_peak_helpers import load_local_spike_times
+from ephys.src.utils.double_peak_helpers import (
+    fetch_grb006_db_spike_times,
+    resolve_grb006_trial_ts_path,
+)
 from ephys.src.utils.utils_analysis import compute_population_peth
 
 matplotlib.use("Agg")
 
 SUBJECT = "GRB006"
 SESSION = "20240821_121447"
-TRIAL_TS_PATH = Path("/Users/gabriel/Downloads/Organized/Code/trial_ts.pkl")
-SPIKE_TIMES_PATH = Path(
-    "/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"
-)
 FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/adaptation")
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -47,8 +46,8 @@ RESP_WINDOW = (0.04, 0.10)
 
 
 def load_inputs() -> tuple[pd.DataFrame, list[np.ndarray]]:
-    trial_ts = pd.read_pickle(TRIAL_TS_PATH)
-    _, spike_times = load_local_spike_times(SPIKE_TIMES_PATH)
+    trial_ts = pd.read_pickle(resolve_grb006_trial_ts_path())
+    _, spike_times = fetch_grb006_db_spike_times()
     return trial_ts, spike_times
 
 

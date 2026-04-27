@@ -1,7 +1,7 @@
 """Standalone interactive browser for last-stationary vs first-movement PSTHs.
 
 Usage:
-  python scripts/supporting/manual_conditioned_psth_browser.py --subject GRB058 --session 20260312_134952
+  python scripts/tools/manual_conditioned_psth_browser.py --subject GRB058 --session 20260312_134952
 
 Controls:
   left/right or j/l : previous/next unit
@@ -28,12 +28,16 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 from matplotlib.widgets import Button
 from scipy.stats import sem
 
+from ephys.src.utils.double_peak_helpers import (
+    GRB006_SESSION,
+    GRB006_SUBJECT,
+    load_grb006_hybrid_session_inputs,
+)
 from ephys.src.utils.utils_analysis import (
     build_trial_stim_classification,
     compute_population_peth,
@@ -68,112 +72,12 @@ Session controls
   q                 : quit (saves and prints final state)
 """
 
-GRB006_SUBJECT = "GRB006"
-GRB006_SESSION = "20240821_121447"
-GRB006_TRIAL_TS_PATH = Path("/Users/gabriel/Downloads/Organized/Code/trial_ts.pkl")
-GRB006_SPIKE_TIMES_PATH = Path(
-    "/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"
-)
-
-
-def enrich_trial_df(trial_df: pd.DataFrame) -> pd.DataFrame:
-    trial_df = trial_df.reset_index(drop=True).copy()
-    trial_df["prev_response"] = trial_df["response"].shift(1)
-    trial_df["prev_rewarded"] = trial_df["rewarded"].shift(1)
-    trial_df["prev_stim_rate"] = trial_df["stim_rate_vision"].shift(1)
-    return trial_df
-
-
-def derive_local_trial_signature(local_row: pd.Series) -> tuple[int | None, int, int]:
-    rate = local_row.get("trial_rate")
-    rate_key = int(rate) if np.isfinite(rate) else None
-    outcome = int(local_row.get("trial_outcome"))
-    side = local_row.get("response_side")
-    if np.isfinite(side):
-        choice = 1 if int(side) == 1 else -1
-    else:
-        choice = 0
-    return rate_key, choice, outcome
-
-
-def derive_full_trial_signature(full_row: pd.Series) -> tuple[int | None, int, int]:
-    rate = full_row.get("stim_rate_vision")
-    rate_key = int(rate) if np.isfinite(rate) else None
-    choice = int(full_row.get("response", 0))
-    if full_row.get("rewarded", 0) == 1:
-        outcome = 1
-    elif full_row.get("with_choice", 0) == 1:
-        outcome = 0
-    else:
-        outcome = 2
-    return rate_key, choice, outcome
-
-
-def align_local_trials_to_full_trial_df(
-    local_trial_ts: pd.DataFrame, full_trial_df: pd.DataFrame
-) -> np.ndarray:
-    matched_idx = []
-    start = 0
-    full_signatures = [
-        derive_full_trial_signature(row) for _, row in full_trial_df.iterrows()
-    ]
-    for _, local_row in local_trial_ts.iterrows():
-        target = derive_local_trial_signature(local_row)
-        found = None
-        for idx in range(start, len(full_signatures)):
-            if full_signatures[idx] == target:
-                found = idx
-                break
-        if found is None:
-            relaxed = (target[0], target[2])
-            for idx in range(start, len(full_signatures)):
-                probe = full_signatures[idx]
-                if (probe[0], probe[2]) == relaxed:
-                    found = idx
-                    break
-        if found is None:
-            raise RuntimeError(
-                "Could not align local paired trial rows to Chipmunk trial rows "
-                f"for {target} starting at full trial index {start}."
-            )
-        matched_idx.append(found)
-        start = found + 1
-    return np.asarray(matched_idx, dtype=int)
-
-
-def fetch_chipmunk_session_trials(subject: str, session: str) -> pd.DataFrame:
-    from labdata.schema import DecisionTask  # noqa: F401
-    from chipmunk import Chipmunk  # type: ignore
-
-    restriction = f"subject_name = '{subject}' AND session_name = '{session}'"
-    trial_df = pd.DataFrame(
-        (Chipmunk * Chipmunk.Trial * Chipmunk.TrialParameters & restriction).fetch(
-            order_by="trial_num"
-        )
-    )
-    if trial_df.empty:
-        raise RuntimeError(f"Could not load Chipmunk trials for {subject} {session}")
-    return enrich_trial_df(trial_df)
-
 
 def load_grb006_downloads_data() -> tuple[
     dict[int, np.ndarray], np.ndarray, np.ndarray
 ]:
-    if not GRB006_TRIAL_TS_PATH.exists():
-        raise FileNotFoundError(f"Missing GRB006 trial_ts file: {GRB006_TRIAL_TS_PATH}")
-    if not GRB006_SPIKE_TIMES_PATH.exists():
-        raise FileNotFoundError(
-            f"Missing GRB006 spike-times file: {GRB006_SPIKE_TIMES_PATH}"
-        )
-
-    trial_ts = pd.read_pickle(GRB006_TRIAL_TS_PATH).reset_index(drop=True).copy()
-    trial_df = fetch_chipmunk_session_trials(GRB006_SUBJECT, GRB006_SESSION)
-    trial_ts["trial_idx"] = align_local_trials_to_full_trial_df(trial_ts, trial_df)
-    spike_df = pd.read_pickle(GRB006_SPIKE_TIMES_PATH)
-    st_per_unit = {
-        int(row["unit_id"]): np.asarray(row["spike_times"], dtype=float) / 30000.0
-        for _, row in spike_df.iterrows()
-    }
+    unit_ids, spike_times, trial_df, trial_ts = load_grb006_hybrid_session_inputs()
+    st_per_unit = dict(zip(unit_ids, spike_times))
     anchors = extract_conditioned_stim_anchors(trial_ts)
     paired_last_stat = np.asarray(anchors["paired_last_stationary"], dtype=float)
     paired_first_move = np.asarray(anchors["paired_first_movement"], dtype=float)

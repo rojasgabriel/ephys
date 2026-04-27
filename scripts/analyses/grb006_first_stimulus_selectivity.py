@@ -4,6 +4,10 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
+from ephys.src.utils.double_peak_helpers import (
+    fetch_grb006_db_spike_times,
+    resolve_grb006_trial_ts_path,
+)
 from ephys.src.utils.utils_analysis import (
     compute_population_peth,
     compute_unit_selectivity,
@@ -19,15 +23,9 @@ plt.rcParams["figure.dpi"] = 100
 animal = "GRB006"
 session = "20240821_121447"
 
-trial_ts = pd.read_pickle("/Users/gabriel/Downloads/Organized/Code/trial_ts.pkl")
-spike_df = pd.read_pickle(
-    "/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"
-)
-spike_times_per_unit = (
-    spike_df["spike_times"]
-    .apply(lambda st: np.asarray(st, dtype=float) / 30000.0)
-    .to_numpy()
-)
+trial_ts = pd.read_pickle(resolve_grb006_trial_ts_path())
+_, spike_times = fetch_grb006_db_spike_times()
+spike_times_per_unit = np.asarray(spike_times, dtype=object)
 
 
 # %% Compute PETHs

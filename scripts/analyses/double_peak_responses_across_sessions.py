@@ -1,4 +1,4 @@
-"""Build the maintained collaborator-facing double-peak summary figure.
+"""Build the collaborator-facing double-peak summary figure.
 
 Story:
 1. Anne and Gabriel first noticed the double-peak response shape in GRB006.
@@ -28,11 +28,10 @@ from ephys.src.config.double_peak import (
 from ephys.src.utils.double_peak_helpers import (
     GRB006_SESSION,
     baseline_mean,
+    fetch_grb006_db_spike_times,
     load_grb006_first_stim,
-    load_local_spike_times,
     mark_peaks,
     plot_mean_sem_trace as plot_trace,
-    resolve_grb006_spike_times_path,
 )
 from ephys.src.utils.utils_IO import (
     fetch_good_units,
@@ -69,10 +68,8 @@ OUT_PATH = FIGURE_DIR / "dario_story.pdf"
 
 
 def collect_grb006():
-    spike_times_path = resolve_grb006_spike_times_path()
     first_stim = load_grb006_first_stim()
-
-    unit_ids, spike_times = load_local_spike_times(spike_times_path)
+    unit_ids, spike_times = fetch_grb006_db_spike_times()
     peth, bin_edges, bin_centers = compute_population_peth(
         spike_times_per_unit=spike_times,
         alignment_times=first_stim,
@@ -112,7 +109,6 @@ def collect_grb006():
         "n_excited": len(exc_ids),
         "n_double": len(double_ids),
         "rows": rows,
-        "spike_times_path": spike_times_path,
     }
 
 

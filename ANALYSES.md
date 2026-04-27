@@ -10,6 +10,13 @@ uv run python scripts/<group>/<script_name>.py
 
 Analysis figure scripts write PDF outputs under `figures/`.
 
+## Regenerate Main Figures
+
+```bash
+uv run python scripts/analyses/locomotion_condition_specific_vs_same_latency_responses.py
+uv run python scripts/analyses/double_peak_responses_across_sessions.py
+```
+
 ## Canonical Entrypoints
 
 ### Locomotion

@@ -1,4 +1,4 @@
-"""Behavior + stat-vs-move summary for GRB006 and GRB058.
+"""Legacy shared-peak locomotion control for GRB006 and GRB058.
 
 This is the stricter locomotion control/comparison surface. It writes three PDF outputs:
   - figures/locomotion/scatter.pdf
@@ -13,7 +13,6 @@ Quality gate:
   - baseline-only soft gate; units must rise above baseline in at least one condition
 """
 
-import pickle
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +34,7 @@ from ephys.src.config.locomotion import (
     RATE_SPLIT_HZ,
     RESP_WINDOW,
 )
+from ephys.src.utils.double_peak_helpers import load_grb006_hybrid_session_inputs
 from ephys.src.utils.utils_analysis import (
     build_trial_stim_classification,
     compute_population_peth,
@@ -46,10 +46,6 @@ from ephys.src.utils.utils_analysis import (
 # peak-centered measurements. The previous RESP_WINDOW=(0.0, 0.12) is now
 # unified with RESP_WINDOW.
 
-LOCAL_TRIAL_TS = Path("/Users/gabriel/Downloads/Organized/Code/trial_ts.pkl")
-LOCAL_SPIKE_TIMES = Path(
-    "/Users/gabriel/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl"
-)
 CANONICAL_LATENCY_WINDOW = (0.015, 0.070)
 TITLE_KW = dict(fontsize=11, pad=3)
 MAIN_ANCHOR_CONFIG = {
@@ -304,20 +300,6 @@ def extract_comparison_anchors(
     raise ValueError(f"Unknown comparison mode: {comparison.mode}")
 
 
-def load_local_spike_times(
-    spike_times_path: Path, sampling_rate: float = 30000.0
-) -> tuple[list[int], list[np.ndarray]]:
-    with spike_times_path.open("rb") as f:
-        spike_df = pickle.load(f)
-
-    unit_ids = spike_df["unit_id"].astype(int).tolist()
-    spike_times = [
-        np.asarray(times, dtype=float) / sampling_rate
-        for times in spike_df["spike_times"].tolist()
-    ]
-    return unit_ids, spike_times
-
-
 def fetch_spike_duration_ms(
     subject: str, session: str, unit_ids: list[int]
 ) -> np.ndarray:
@@ -465,16 +447,11 @@ def load_db_behavior(
 def load_local_spikes_db_behavior(
     subject: str,
     session: str,
-    trial_ts_path: Path,
-    spike_times_path: Path,
-    sampling_rate: float = 30000.0,
 ):
     print(f"\nLoading hybrid session: {subject} {session}")
-    trial_df = fetch_chipmunk_session_trials(subject, session)
-    trial_ts, first_stim_times = load_local_trial_ts(trial_ts_path)
-    matched_full_idx = align_local_trials_to_full_trial_df(trial_ts, trial_df)
-    trial_ts["trial_idx"] = matched_full_idx
-    unit_ids, spike_times = load_local_spike_times(spike_times_path, sampling_rate)
+    unit_ids, spike_times, trial_df, trial_ts = load_grb006_hybrid_session_inputs()
+    first_stim_times = trial_ts["first_stim_ts"].to_numpy(dtype=float)
+    first_stim_times = first_stim_times[np.isfinite(first_stim_times)]
     spike_duration_ms = fetch_spike_duration_ms(subject, session, unit_ids)
     print(
         f"  Units: {len(unit_ids)}  Trials: {len(trial_df)}  "
@@ -1834,8 +1811,6 @@ def main():
     grb006 = load_local_spikes_db_behavior(
         subject="GRB006",
         session="20240821_121447",
-        trial_ts_path=LOCAL_TRIAL_TS,
-        spike_times_path=LOCAL_SPIKE_TIMES,
     )
     grb058 = load_db_session(
         subject="GRB058",

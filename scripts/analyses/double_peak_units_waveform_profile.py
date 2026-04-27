@@ -14,7 +14,7 @@ Classification uses canonical params from src/config/double_peak.py
 (FDR selectivity + 5 sp/s height floor on both peaks).
 
 GRB006 event loading uses local trial_ts.pkl (DB events not available).
-GRB006 spike times use local KS4 pkl (DB spike times stale).
+GRB006 spike times use DB-backed good-unit rows.
 GRB058 is fully DB-backed.
 
 Output
@@ -42,9 +42,8 @@ from ephys.src.config.double_peak import (
 )
 from ephys.src.utils.double_peak_helpers import (
     baseline_mean,
+    fetch_grb006_db_spike_times,
     load_grb006_first_stim,
-    load_local_spike_times,
-    resolve_grb006_spike_times_path,
 )
 from ephys.src.utils.utils_IO import fetch_session_events
 from ephys.src.utils.utils_analysis import (
@@ -101,7 +100,7 @@ def _fetch_unit_table(subject: str, session: str) -> pd.DataFrame:
 
     srate = float((EphysRecording.ProbeSetting() & sess_q).fetch("sampling_rate")[0])
     if subject == "GRB006":
-        spk_map = _load_grb006_spike_times_map()
+        spk_map = _fetch_grb006_spike_times_map()
         df["spike_times_s"] = df["unit_id"].apply(
             lambda uid: spk_map.get(int(uid), np.array([]))
         )
@@ -123,10 +122,9 @@ def _fetch_unit_table(subject: str, session: str) -> pd.DataFrame:
     return df.sort_values("depth", ascending=True).reset_index(drop=True)
 
 
-def _load_grb006_spike_times_map(sampling_rate: float = 30000.0) -> dict:
-    """Return {unit_id: spike_times_s} from the local KS4 pkl."""
-    path = resolve_grb006_spike_times_path()
-    unit_ids, spike_times = load_local_spike_times(path, sampling_rate=sampling_rate)
+def _fetch_grb006_spike_times_map() -> dict:
+    """Return {unit_id: spike_times_s} from the DB-backed good-unit rows."""
+    unit_ids, spike_times = fetch_grb006_db_spike_times()
     return dict(zip(unit_ids, spike_times))
 
 

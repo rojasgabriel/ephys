@@ -27,10 +27,6 @@ def _fetch_good_units_table(
     `unit_criteria_id=1` is the project's standard quality criterion set
     (amplitude / SNR / contamination thresholds defined upstream in labdata).
     Don't change without reason — most downstream analyses assume criterion 1.
-
-    NOTE: for GRB006 20240821, the DB spike_times are stale. Scripts that
-    need GRB006 data should load from the local KS4 pkl instead (see the
-    analysis-conventions wiki page).
     """
     sess_query = (
         SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'
@@ -123,20 +119,50 @@ def fetch_session_events(
     events = DatasetEvents.Digital() & dset
     events = pd.DataFrame(events.fetch_synced())
 
+    if events.empty:
+        raise ValueError(f"No DatasetEvents.Digital rows found for {subject} {session}")
+
+    candidate_streams = [
+        stream
+        for stream in ("obx", "nidq")
+        if ((events["stream_name"] == stream) & (events["event_name"] == "io2")).any()
+    ]
+    if not candidate_streams:
+        available = sorted(
+            {
+                f"{row.stream_name}:{row.event_name}"
+                for row in events[["stream_name", "event_name"]].itertuples(index=False)
+            }
+        )
+        raise ValueError(
+            f"Could not find canonical io-style event rows for {subject} {session}. "
+            f"Available rows: {available}"
+        )
+    event_stream = candidate_streams[0]
+
+    def fetch_event(event_name: str) -> np.ndarray:
+        mask = (events["stream_name"] == event_stream) & (
+            events["event_name"] == event_name
+        )
+        if not mask.any():
+            raise ValueError(
+                f"Missing {event_stream}:{event_name} for {subject} {session}"
+            )
+        values = events.loc[mask, "event_timestamps"].values[0]
+        return np.asarray(values, dtype=float)
+
     # io2 fires twice per trial: rising edge (trial onset) then falling edge
     # ~100 ms later when the TTL pulse ends.  Keep only the rising edges.
-    io2_all = events.query("event_name == 'io2'").event_timestamps.values[0]
+    io2_all = fetch_event("io2")
     trial_start = io2_all[::2]
 
     align_ev: dict[str, np.ndarray] = {
-        "stim": events.query("event_name == 'io0'").event_timestamps.values[0],
+        "stim": fetch_event("io0"),
         "trial_start": trial_start,
-        "frames": events.query("event_name == 'io3'").event_timestamps.values[0],
-        "left_port": events.query("event_name == 'io4'").event_timestamps.values[0],
-        "center_port": events.query("event_name == 'io5'").event_timestamps.values[0],
-        "right_port": events.query(
-            "event_name == 'io6' & stream_name == 'obx'"
-        ).event_timestamps.values[0],
+        "frames": fetch_event("io3"),
+        "left_port": fetch_event("io4"),
+        "center_port": fetch_event("io5"),
+        "right_port": fetch_event("io6"),
     }
 
     stim = np.asarray(align_ev["stim"], dtype=float)

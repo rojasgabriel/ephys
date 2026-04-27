@@ -2,8 +2,8 @@
 
 Last reviewed: 2026-04-23.
 
-These windows are shared by the primary Niell-style locomotion analysis and the
-older stricter task-matched control script.
+These windows are shared by the primary condition-peak locomotion analysis and
+the older shared-peak control script.
 
 Only `PETH_KWARGS`, `BASELINE_WINDOW`, and `RESP_WINDOW` should be assumed to
 apply across locomotion analyses in general. The remaining constants are kept
@@ -21,7 +21,7 @@ PETH_KWARGS = dict(
 BASELINE_WINDOW = (-0.04, 0.0)
 RESP_WINDOW = (0.03, 0.12)
 
-# Control-script-specific constants used by locomotion_stat_vs_move.py.
+# Control-script-specific constants used by the same-latency locomotion analysis.
 PEAK_HALF_WINDOW_S = 0.015
 
 QVAL_ALPHA = 0.05

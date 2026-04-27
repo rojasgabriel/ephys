@@ -20,10 +20,9 @@ Install dependencies:
 
 Analysis entrypoints are grouped under `scripts/` by role:
 
-- `scripts/maintained/` — canonical figure generators
-- `scripts/supporting/` — secondary helpers and reference analyses
-- `scripts/diagnostics/` — one-off debug investigations
-- `scripts/tools/` — general utilities
+- `scripts/analyses/` — scripts that answer scientific questions or generate analysis figures
+- `scripts/diagnostics/` — one-off checks of data quality, sync, or pipeline assumptions
+- `scripts/tools/` — interactive utilities and browsers
 
 Tested on:
 

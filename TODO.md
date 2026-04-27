@@ -8,7 +8,7 @@
   - Bottom row: double-peak units from GRB058 — units 410 and 651 (3/12), unit 515 (3/19) — 15 ms (blue) + 30 ms (orange) overlaid.
   - GRB059 and GRB060 have no double-peak units (small samples, barely trained); absent from bottom row.
   - GRB006 (~11/150 double-peak units): referenced in email text; nidq pipeline not yet ported.
-- Script: `scripts/maintained/double_peak_pulse_width_control.py`
+- Script: `scripts/analyses/double_peak_responses_by_pulse_width.py`
 - GRB006 archived figures stored in `figures/GRB006/` (unit 77 PETHs, rasters, spike duration histogram, copied from Marsa's Dec 2025 email).
 - Remaining: attach figure and send the Dario email (Gmail draft ready, CC Anne + Marsa). Manually delete the superseded older draft.
 - Confounds to note in email: (1) 30 ms = ~2× photons at same LED intensity; (2) small 30 ms sample (30–34 first-of-train events); (3) first-pulse-only alignment.
@@ -26,7 +26,7 @@
 ## Code cleanup
 
 - `src/utils/utils_analysis.py:447` — generalize `compute_stim_response_for_trial_subset` so it can compare any two trial subsets, not just stationary vs movement.
-- `scripts/diagnostics/grb058_sync_breakdown.py` and `scripts/diagnostics/grb058_sync_trial100_deep_dive.py` are legacy debugging one-offs; either consolidate them or retire them after the sync question is closed.
+- `scripts/diagnostics/grb058_trial_sync_breakdown.py` and `scripts/diagnostics/grb058_trial100_sync_shift.py` are legacy debugging one-offs; either consolidate them or retire them after the sync question is closed.
 
 ## Post-SfN (June–November 2026)
 

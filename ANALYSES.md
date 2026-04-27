@@ -1,6 +1,6 @@
 # Ephys Analysis Guide
 
-Current maintained analysis surface for this repo.
+Current analysis surface for this repo.
 
 Run from the repo root:
 
@@ -8,7 +8,7 @@ Run from the repo root:
 uv run python scripts/<group>/<script_name>.py
 ```
 
-All maintained figure scripts write PDF outputs under `figures/`.
+Analysis figure scripts write PDF outputs under `figures/`.
 
 ## Canonical Entrypoints
 
@@ -16,38 +16,40 @@ All maintained figure scripts write PDF outputs under `figures/`.
 
 Primary locomotion analysis:
 
-`scripts/supporting/locomotion_niell_style_fs_rs.py`
+`scripts/analyses/locomotion_condition_specific_vs_same_latency_responses.py`
 
 Writes:
 
-- `figures/locomotion/niell_style_paired_last_stat_first_move_shared_stat_baseline.pdf`
-- `figures/locomotion/niell_style_paired_last_stat_first_move_shared_stat_baseline_no_waveform_split.pdf`
+- `figures/locomotion/readout_comparison_behavior_matching.pdf`
+- `figures/locomotion/readout_comparison_latency_jitter.pdf`
 
-Current maintained policy:
+Current policy:
 
 - This is the canonical locomotion entrypoint.
-- Default baseline policy is now shared stationary baseline subtraction.
-- The maintained readout is the paired Niell-style comparison:
-  - `last stationary` vs `first movement`
-- Each condition keeps its own peak latency within `RESP_WINDOW`.
-- `--condition-specific-baseline` opts out of the default shared stationary
-  baseline subtraction.
-- The exported figure is a single cross-subject overlay:
-  - unit dots colored by subject with `alpha=0.2`
-  - `RS` units as circles and `FS` units as triangles
-  - one `RS` mean and one `FS` mean per subject with `95%` t-based confidence intervals in x and y
-  - subject colors taken from the `Set1` colormap
-  - no figure title, panel title, or annotation box
-- The script also writes a no-waveform-split companion figure with one mean per
-  subject and the same CI logic.
+- The main figure for now is `readout_comparison_behavior_matching.pdf`.
+- It is a 2x2 comparison surface:
+  - top row: baseline-gated shared-baseline views
+  - bottom row: all-units raw-response views
+  - left column: condition-peak readout
+  - right column: shared-peak control readout
+- The behavior-matching scatter uses shared log-scale axes across all four panels.
+- This is the current figure to regenerate when the user asks for the main locomotion figure.
+
+Secondary single-overlay figure:
+
+`scripts/analyses/locomotion_condition_specific_peak_responses.py`
+
+- writes `figures/locomotion/condition_peak_paired_last_stat_first_move_shared_stat_baseline_no_waveform_split.pdf`
+- writes `figures/locomotion/condition_peak_paired_last_stat_first_move_shared_stat_baseline.pdf` when run with `--split-by-waveform`
+- this is now a follow-up condition-peak-only figure rather than the primary output
 
 Stricter control surface:
 
-`scripts/maintained/locomotion_stat_vs_move.py`
+`scripts/analyses/locomotion_same_latency_response_control.py`
 
 - This is no longer the main locomotion analysis.
-- It remains the stricter task-matched comparison surface with shared-latency
-  logic, baseline gating, and rate-split / timing-control figures.
+- It remains the legacy shared-peak control surface with baseline gating and
+  rate-split / timing-control figures.
 
 ### Double-Peak
 
@@ -62,22 +64,22 @@ Canonical parameters live in `src/config/double_peak.py`.
 `compute_population_peth` converts the default `spks.population_peth` output to
 `sp/s`. Do not rescale it again downstream.
 
-Maintained scripts:
+Analysis scripts:
 
-- `scripts/maintained/double_peak_grb006_examples.py`
+- `scripts/analyses/grb006_double_peak_example_units.py`
   - output: `figures/double_peak/grb006_examples.pdf`
   - scope: GRB006-only example figure
-- `scripts/maintained/double_peak_story.py`
+- `scripts/analyses/double_peak_responses_across_sessions.py`
   - output: `figures/double_peak/dario_story.pdf`
   - scope: collaborator-facing summary figure
-- `scripts/maintained/double_peak_waveform_grid.py`
+- `scripts/analyses/double_peak_units_waveform_profile.py`
   - output: `figures/double_peak/waveform_grid.pdf`
   - scope: firing rate vs spike duration only
-- `scripts/maintained/double_peak_pulse_width_control.py`
+- `scripts/analyses/double_peak_responses_by_pulse_width.py`
   - output: `figures/double_peak/pulse_split.pdf`
   - scope: `15 ms` vs `30 ms` pulse-width control
 
-Current maintained counts:
+Current counts:
 
 - GRB006 `20240821_121447`: `5 / 189` double-peak units
   - `[217, 570, 579, 694, 720]`
@@ -98,9 +100,7 @@ Interpretation boundary:
 
 GRB006 `20240821_121447` is hybrid-loaded.
 
-- Spike times: local KS4 export
-  - `~/data/GRB006/20240821_121447/pre_processed/20240821_121447_ks4_spike_times.pkl`
-  - fallback: `~/Downloads/Organized/Code/20240821_121447_ks4_spike_times.pkl`
+- Spike times: DB-backed good units via `fetch_good_units`
 - Trial anchors: local `trial_ts.pkl`
   - `~/data/GRB006/20240821_121447/pre_processed/trial_ts.pkl`
   - fallback: `~/Downloads/Organized/Code/trial_ts.pkl`
@@ -121,22 +121,22 @@ Current expected warnings:
 - `20260312_134952`: `OBX=236`, `Chipmunk=235`
 - `20260319_131303`: `OBX=219`, `Chipmunk=218`
 
-## Supporting Tools
+## Other Scripts
 
-Still usable, but not part of the main maintained figure surface:
+Still usable, but not part of the main figure surface:
 
-- `scripts/supporting/manual_conditioned_psth_browser.py`
+- `scripts/tools/manual_conditioned_psth_browser.py`
   - interactive locomotion PSTH browser
-- `scripts/supporting/stimulus_selectivity.py`
+- `scripts/analyses/grb006_first_stimulus_selectivity.py`
   - local first-stim selectivity utility
-- `scripts/supporting/adaptation.py`
+- `scripts/analyses/grb006_visual_response_adaptation.py`
   - archived local GRB006 adaptation analysis
-- `scripts/supporting/locomotion_snr_reference.py`
+- `scripts/diagnostics/locomotion_response_snr_distribution.py`
   - reference-only diagnostic for the removed SNR gate
 
 ## Retired Surface
 
-Not part of the maintained interface:
+Not part of the current analysis interface:
 
 - duplicate older locomotion scripts
 - broken pre-canonical timing scripts
@@ -146,13 +146,11 @@ Not part of the maintained interface:
 
 ## Script Layout
 
-`scripts/` is now grouped by role instead of keeping every entrypoint flat:
+`scripts/` is grouped by scientific use:
 
-- `scripts/maintained/`
-  - canonical figure generators
-- `scripts/supporting/`
-  - still-usable helpers and reference analyses
+- `scripts/analyses/`
+  - scripts that answer a scientific question or generate analysis figures
 - `scripts/diagnostics/`
-  - one-off sync/debug investigations
+  - one-off checks of data quality, sync, or pipeline assumptions
 - `scripts/tools/`
-  - general-purpose interactive utilities
+  - interactive utilities and browsers

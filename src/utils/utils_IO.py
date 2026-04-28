@@ -15,6 +15,150 @@ from labdata.schema import (
 
 
 PortEventDict = Dict[str, Dict[str, np.ndarray]]
+REQUIRED_LOGICAL_EVENTS = (
+    "visual_stim",
+    "trial_start",
+    "frames",
+    "left_port",
+    "center_port",
+    "right_port",
+)
+
+
+def _format_available_event_rows(events: pd.DataFrame) -> list[str]:
+    return sorted(
+        {
+            f"{row.dataset_name}:{row.stream_name}:{row.event_name}"
+            for row in events[["dataset_name", "stream_name", "event_name"]].itertuples(
+                index=False
+            )
+        }
+    )
+
+
+def _fetch_session_digital_events(subject: str, session: str) -> pd.DataFrame:
+    sess_query = (
+        SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'
+    ).proj()
+    dset = (Dataset() & sess_query).proj()
+    events = pd.DataFrame((DatasetEvents.Digital() & dset).fetch_synced())
+    if events.empty:
+        raise ValueError(f"No DatasetEvents.Digital rows found for {subject} {session}")
+    return events
+
+
+def _fetch_event_mapping_rows(subject: str, session: str) -> pd.DataFrame:
+    from labdata_plugin.analysisschema import EventMapping
+
+    mapping = pd.DataFrame(
+        (
+            EventMapping()
+            & f'subject_name = "{subject}"'
+            & f'session_name = "{session}"'
+        ).fetch(as_dict=True)
+    )
+    if mapping.empty:
+        raise ValueError(f"No EventMapping rows found for {subject} {session}")
+    return mapping
+
+
+def _resolve_mapped_event_timestamps(
+    events: pd.DataFrame,
+    mapping: pd.DataFrame,
+    subject: str,
+    session: str,
+) -> dict[str, np.ndarray]:
+    mapped_event_names = mapping["event_name"].tolist()
+    missing = [
+        name for name in REQUIRED_LOGICAL_EVENTS if name not in mapped_event_names
+    ]
+    if missing:
+        available_mappings = sorted(set(mapped_event_names))
+        raise ValueError(
+            f"Missing EventMapping rows for {subject} {session}: {missing}. "
+            f"Available mapped names: {available_mappings}"
+        )
+
+    duplicates = mapping["event_name"][mapping["event_name"].duplicated()].unique()
+    if duplicates.size:
+        raise ValueError(
+            f"Duplicate EventMapping rows for {subject} {session}: "
+            f"{sorted(duplicates.tolist())}"
+        )
+
+    resolved: dict[str, np.ndarray] = {}
+    available_rows = _format_available_event_rows(events)
+    for logical_name in REQUIRED_LOGICAL_EVENTS:
+        row = mapping.loc[mapping["event_name"] == logical_name].iloc[0]
+        mask = (
+            (events["dataset_name"] == row["source_dataset_name"])
+            & (events["stream_name"] == row["source_stream_name"])
+            & (events["event_name"] == row["source_event_name"])
+        )
+        if not mask.any():
+            raise ValueError(
+                f"Mapped source row is missing for {subject} {session} "
+                f"{logical_name}: {row['source_dataset_name']}:"
+                f"{row['source_stream_name']}:{row['source_event_name']}. "
+                f"Available rows: {available_rows}"
+            )
+        resolved[logical_name] = np.asarray(
+            events.loc[mask, "event_timestamps"].iloc[0], dtype=float
+        )
+    return resolved
+
+
+def _extract_trial_start_onsets(trial_start_events: np.ndarray) -> np.ndarray:
+    trial_start_events = np.asarray(trial_start_events, dtype=float)
+    return trial_start_events[::2]
+
+
+def _extract_first_events(ev_array: np.ndarray, sep_s: float = 1.0) -> np.ndarray:
+    if ev_array.size == 0:
+        return ev_array
+    keep = np.r_[True, np.diff(ev_array) > sep_s]
+    return ev_array[keep]
+
+
+def _build_stim_event_streams(stim: np.ndarray) -> dict[str, np.ndarray]:
+    stim = np.asarray(stim, dtype=float)
+
+    max_within_pulse_gap_s = 0.020
+    if stim.size > 0:
+        stim_sorted = np.sort(stim)
+        split_idx = np.where(np.diff(stim_sorted) > max_within_pulse_gap_s)[0] + 1
+        bursts = np.split(stim_sorted, split_idx)
+
+        onsets = np.array([b[0] for b in bursts])
+        durations = np.array([b[-1] - b[0] for b in bursts])
+    else:
+        onsets = np.array([])
+        durations = np.array([])
+
+    tol_s = 2e-3
+    if durations.size and np.allclose(durations, 0.0):
+        # Historical GRB006 repairs insert onset-only visual events instead of
+        # raw TTL edges, so treat the mapped row as a 15 ms-only stim stream.
+        labels = np.full(durations.shape, "15ms", dtype=object)
+    else:
+        diff_15 = np.abs(durations - 0.015)
+        diff_30 = np.abs(durations - 0.030)
+        is_15 = diff_15 <= tol_s
+        is_30 = diff_30 <= tol_s
+        labels = np.where(is_15, "15ms", np.where(is_30, "30ms", "unknown"))
+
+    stim_ev = onsets
+    stim_ev_15ms = onsets[labels == "15ms"]
+    stim_ev_30ms = onsets[labels == "30ms"]
+
+    return {
+        "stim_ev": stim_ev,
+        "first_stim_ev": _extract_first_events(stim_ev),
+        "stim_ev_15ms": stim_ev_15ms,
+        "stim_ev_30ms": stim_ev_30ms,
+        "first_stim_ev_15ms": _extract_first_events(stim_ev_15ms),
+        "first_stim_ev_30ms": _extract_first_events(stim_ev_30ms),
+    }
 
 
 def _fetch_good_units_table(
@@ -111,110 +255,22 @@ def fetch_session_events(
       - `first_stim_ev_15ms`: first-of-train onsets for 15 ms pulses only
       - `first_stim_ev_30ms`: first-of-train onsets for 30 ms pulses only
     """
-    sess_query = (
-        SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'
-    ).proj()
+    events = _fetch_session_digital_events(subject, session)
+    mapping = _fetch_event_mapping_rows(subject, session)
+    resolved = _resolve_mapped_event_timestamps(events, mapping, subject, session)
 
-    dset = (Dataset() & sess_query).proj()
-    events = DatasetEvents.Digital() & dset
-    events = pd.DataFrame(events.fetch_synced())
-
-    if events.empty:
-        raise ValueError(f"No DatasetEvents.Digital rows found for {subject} {session}")
-
-    candidate_streams = [
-        stream
-        for stream in ("obx", "nidq")
-        if ((events["stream_name"] == stream) & (events["event_name"] == "io2")).any()
-    ]
-    if not candidate_streams:
-        available = sorted(
-            {
-                f"{row.stream_name}:{row.event_name}"
-                for row in events[["stream_name", "event_name"]].itertuples(index=False)
-            }
-        )
-        raise ValueError(
-            f"Could not find canonical io-style event rows for {subject} {session}. "
-            f"Available rows: {available}"
-        )
-    event_stream = candidate_streams[0]
-
-    def fetch_event(event_name: str) -> np.ndarray:
-        mask = (events["stream_name"] == event_stream) & (
-            events["event_name"] == event_name
-        )
-        if not mask.any():
-            raise ValueError(
-                f"Missing {event_stream}:{event_name} for {subject} {session}"
-            )
-        values = events.loc[mask, "event_timestamps"].values[0]
-        return np.asarray(values, dtype=float)
-
-    # io2 fires twice per trial: rising edge (trial onset) then falling edge
-    # ~100 ms later when the TTL pulse ends.  Keep only the rising edges.
-    io2_all = fetch_event("io2")
-    trial_start = io2_all[::2]
-
+    # Trial-start TTLs still arrive as on/off edge pairs, regardless of the
+    # physical source row used for this session.
+    trial_start = _extract_trial_start_onsets(resolved["trial_start"])
     align_ev: dict[str, np.ndarray] = {
-        "stim": fetch_event("io0"),
+        "stim": resolved["visual_stim"],
         "trial_start": trial_start,
-        "frames": fetch_event("io3"),
-        "left_port": fetch_event("io4"),
-        "center_port": fetch_event("io5"),
-        "right_port": fetch_event("io6"),
+        "frames": resolved["frames"],
+        "left_port": resolved["left_port"],
+        "center_port": resolved["center_port"],
+        "right_port": resolved["right_port"],
     }
-
-    stim = np.asarray(align_ev["stim"], dtype=float)
-
-    # 1. Parse noisy toggling edges into continuous pulse bursts
-    max_within_pulse_gap_s = 0.020
-    if stim.size > 0:
-        stim_sorted = np.sort(stim)
-        split_idx = np.where(np.diff(stim_sorted) > max_within_pulse_gap_s)[0] + 1
-        bursts = np.split(stim_sorted, split_idx)
-
-        onsets = np.array([b[0] for b in bursts])
-        durations = np.array([b[-1] - b[0] for b in bursts])
-    else:
-        onsets = np.array([])
-        durations = np.array([])
-
-    # 2. Assign class labels based on pulse duration
-    tol_s = 2e-3
-    diff_15 = np.abs(durations - 0.015)
-    diff_30 = np.abs(durations - 0.030)
-
-    is_15 = diff_15 <= tol_s
-    is_30 = diff_30 <= tol_s
-    labels = np.where(is_15, "15ms", np.where(is_30, "30ms", "unknown"))
-
-    # 3. Create core event streams
-    stim_ev = onsets
-    stim_ev_15ms = onsets[labels == "15ms"]
-    stim_ev_30ms = onsets[labels == "30ms"]
-
-    def extract_first_events(ev_array, sep_s=1.0):
-        if ev_array.size == 0:
-            return ev_array
-        keep = np.r_[True, np.diff(ev_array) > sep_s]
-        return ev_array[keep]
-
-    first_stim_ev = extract_first_events(stim_ev)
-    first_stim_ev_15ms = extract_first_events(stim_ev_15ms)
-    first_stim_ev_30ms = extract_first_events(stim_ev_30ms)
-
-    align_ev.update(
-        {
-            "stim_ev": stim_ev,
-            "first_stim_ev": first_stim_ev,
-            "stim_ev_15ms": stim_ev_15ms,
-            "stim_ev_30ms": stim_ev_30ms,
-            "first_stim_ev_15ms": first_stim_ev_15ms,
-            "first_stim_ev_30ms": first_stim_ev_30ms,
-        }
-    )
-
+    align_ev.update(_build_stim_event_streams(align_ev["stim"]))
     return align_ev
 
 

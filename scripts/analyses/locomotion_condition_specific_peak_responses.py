@@ -259,24 +259,6 @@ def analyze_subject_mode(
     }
 
 
-def summary_line(
-    stationary_peak_response: np.ndarray, movement_peak_response: np.ndarray
-) -> str:
-    if len(stationary_peak_response) == 0:
-        return "no units"
-    pct_above_diagonal = (
-        100 * (movement_peak_response > stationary_peak_response).mean()
-    )
-    median_delta_sp_s = float(
-        np.median(movement_peak_response - stationary_peak_response)
-    )
-    return (
-        f"{pct_above_diagonal:.0f}% above diag  "
-        f"Δmedian={median_delta_sp_s:+.2f} sp/s  "
-        f"n={len(stationary_peak_response)}"
-    )
-
-
 def print_mode_summary(mode_result: dict[str, object]) -> None:
     print(f"\n{mode_result['subject']}  {mode_result['mode_label']}")
     print(f"  stationary events: {mode_result['n_stationary_events']}")

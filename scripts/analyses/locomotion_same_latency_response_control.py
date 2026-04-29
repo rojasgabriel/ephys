@@ -648,17 +648,6 @@ def pick_best_example(
     return int(candidate_idx[order[0]])
 
 
-def shortlist_string(candidate_idx, scores, unit_ids, top_n=5):
-    if len(candidate_idx) == 0:
-        return "[]"
-    order = np.argsort(scores)[::-1][:top_n]
-    return "[" + ", ".join(str(unit_ids[int(candidate_idx[i])]) for i in order) + "]"
-
-
-def finite_or(value: float, default: float) -> float:
-    return float(value) if np.isfinite(value) else default
-
-
 def analyze_session(
     inputs: SessionInputs,
     stationary_index: int | None = None,
@@ -775,10 +764,44 @@ def analyze_session(
         [
             6.0 * max(stat_sig[ui]["n_peaks"] - 1, 0)
             + 6.0 * max(move_sig[ui]["n_peaks"] - 1, 0)
-            + 0.14 * max(finite_or(move_sig[ui]["width_ms"], 60.0) - 35.0, 0.0)
-            + 8.0 * max(finite_or(move_sig[ui]["tail_ratio"], 0.6) - 0.20, 0.0)
-            + 1.2 * max(finite_or(move_sig[ui]["smooth_tv"], 3.0), 0.0)
-            + 0.25 * max(finite_or(move_sig[ui]["smooth_curv"], 3.0), 0.0)
+            + 0.14
+            * max(
+                (
+                    float(move_sig[ui]["width_ms"])
+                    if np.isfinite(move_sig[ui]["width_ms"])
+                    else 60.0
+                )
+                - 35.0,
+                0.0,
+            )
+            + 8.0
+            * max(
+                (
+                    float(move_sig[ui]["tail_ratio"])
+                    if np.isfinite(move_sig[ui]["tail_ratio"])
+                    else 0.6
+                )
+                - 0.20,
+                0.0,
+            )
+            + 1.2
+            * max(
+                (
+                    float(move_sig[ui]["smooth_tv"])
+                    if np.isfinite(move_sig[ui]["smooth_tv"])
+                    else 3.0
+                ),
+                0.0,
+            )
+            + 0.25
+            * max(
+                (
+                    float(move_sig[ui]["smooth_curv"])
+                    if np.isfinite(move_sig[ui]["smooth_curv"])
+                    else 3.0
+                ),
+                0.0,
+            )
             + 40.0 * latency_gap[ui]
             for ui in range(len(inputs.unit_ids))
         ]
@@ -867,11 +890,26 @@ def analyze_session(
         f"no-effect={inputs.unit_ids[ex_noeffect_idx]}"
     )
     if inputs.subject == "GRB006":
+        shortlists = {}
+        for label, candidates, scores in [
+            ("exc", exc_cands, exc_scores[exc_cands]),
+            ("supp", supp_cands, supp_scores[supp_cands]),
+            ("no-effect", noeff_cands, noeff_scores[noeff_cands]),
+        ]:
+            if len(candidates) == 0:
+                shortlists[label] = "[]"
+                continue
+            order = np.argsort(scores)[::-1][:5]
+            shortlists[label] = (
+                "["
+                + ", ".join(str(inputs.unit_ids[int(candidates[i])]) for i in order)
+                + "]"
+            )
         print(
             "  GRB006 shortlist: "
-            f"exc={shortlist_string(exc_cands, exc_scores[exc_cands], inputs.unit_ids)}  "
-            f"supp={shortlist_string(supp_cands, supp_scores[supp_cands], inputs.unit_ids)}  "
-            f"no-effect={shortlist_string(noeff_cands, noeff_scores[noeff_cands], inputs.unit_ids)}"
+            f"exc={shortlists['exc']}  "
+            f"supp={shortlists['supp']}  "
+            f"no-effect={shortlists['no-effect']}"
         )
 
     return SessionAnalysis(
@@ -1678,11 +1716,6 @@ def build_figure(results):
     return fig
 
 
-def save_pdf(fig, pdf_path):
-    fig.savefig(pdf_path, bbox_inches="tight")
-    print(f"\nFigure saved: {pdf_path}")
-
-
 def main():
     grb006 = load_local_spikes_db_behavior(
         subject="GRB006",
@@ -1705,15 +1738,18 @@ def main():
     ]
     fig = build_figure(results)
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    save_pdf(fig, OUT_PATH)
+    fig.savefig(OUT_PATH, bbox_inches="tight")
+    print(f"\nFigure saved: {OUT_PATH}")
     plt.close(fig)
 
     fig_overlay = build_overlay_scatter_figure(results)
-    save_pdf(fig_overlay, OUT_PATH_OVERLAY)
+    fig_overlay.savefig(OUT_PATH_OVERLAY, bbox_inches="tight")
+    print(f"\nFigure saved: {OUT_PATH_OVERLAY}")
     plt.close(fig_overlay)
 
     fig_overlay_waveform = build_overlay_waveform_split_figure(results)
-    save_pdf(fig_overlay_waveform, OUT_PATH_OVERLAY_WAVEFORM)
+    fig_overlay_waveform.savefig(OUT_PATH_OVERLAY_WAVEFORM, bbox_inches="tight")
+    print(f"\nFigure saved: {OUT_PATH_OVERLAY_WAVEFORM}")
     plt.close(fig_overlay_waveform)
 
     summary_comparisons = [
@@ -1761,7 +1797,8 @@ def main():
         for comparison in summary_comparisons
     ]
     fig_overlay_summary = build_overlay_summary_figure(summary_rows)
-    save_pdf(fig_overlay_summary, OUT_PATH_OVERLAY_SUMMARY)
+    fig_overlay_summary.savefig(OUT_PATH_OVERLAY_SUMMARY, bbox_inches="tight")
+    print(f"\nFigure saved: {OUT_PATH_OVERLAY_SUMMARY}")
     plt.close(fig_overlay_summary)
 
 

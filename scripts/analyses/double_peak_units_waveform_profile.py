@@ -120,13 +120,9 @@ def _fetch_grb006_spike_times_map() -> dict:
     return dict(zip(unit_ids, spike_times))
 
 
-def _load_grb006_first_stim() -> np.ndarray:
-    return load_grb006_first_stim()
-
-
 def _get_first_stim(subject: str, session: str) -> np.ndarray:
     if subject == "GRB006":
-        return _load_grb006_first_stim()
+        return load_grb006_first_stim()
     align_ev = fetch_session_events(subject, session)
     return align_ev["first_stim_ev_15ms"]
 

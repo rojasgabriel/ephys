@@ -224,16 +224,8 @@ def above_baseline_mask(
     return (pk_stat - bl_stat > 0) | (pk_move - bl_move > 0)
 
 
-def effect_mask_from_bc(bc: np.ndarray) -> np.ndarray:
-    return (bc >= RESP_WINDOW[0]) & (bc < RESP_WINDOW[1])
-
-
-def baseline_mask_from_bc(bc: np.ndarray) -> np.ndarray:
-    return (bc >= BASELINE_WINDOW[0]) & (bc < BASELINE_WINDOW[1])
-
-
 def per_trial_peak_latencies(peth: np.ndarray, bc: np.ndarray) -> np.ndarray:
-    effect_mask = effect_mask_from_bc(bc)
+    effect_mask = (bc >= RESP_WINDOW[0]) & (bc < RESP_WINDOW[1])
     bc_effect = bc[effect_mask]
     if bc_effect.size == 0:
         raise ValueError("RESP_WINDOW does not overlap available bins.")
@@ -410,13 +402,6 @@ def behavior_match_components(paired_df: pd.DataFrame) -> dict[str, pd.Series]:
     }
 
 
-def compose_match_key(components: dict[str, pd.Series], keys: list[str]) -> pd.Series:
-    key = components[keys[0]].astype(str)
-    for extra_key in keys[1:]:
-        key = key + "|" + components[extra_key].astype(str)
-    return key
-
-
 def median_delta_summary(
     stat_values: np.ndarray, move_values: np.ndarray, mask: np.ndarray
 ) -> tuple[float, float]:
@@ -536,8 +521,8 @@ def compute_session_metrics(
         stat_resp_mean, move_resp_mean, stat_baseline_mean, move_baseline_mean
     )
 
-    effect_mask = effect_mask_from_bc(bc)
-    baseline_mask = baseline_mask_from_bc(bc)
+    effect_mask = (bc >= RESP_WINDOW[0]) & (bc < RESP_WINDOW[1])
+    baseline_mask = (bc >= BASELINE_WINDOW[0]) & (bc < BASELINE_WINDOW[1])
     bc_effect = bc[effect_mask]
 
     mean_stat = peth_stat.mean(axis=1)

@@ -90,10 +90,6 @@ def peak_matrix_for_stims(
     return pd.DataFrame(np.stack(peak_responses, axis=1), columns=STIM_LABELS)
 
 
-def baseline_to_first_flash(peak_df: pd.DataFrame) -> pd.DataFrame:
-    return peak_df.subtract(peak_df["peak_first_flash"], axis=0)
-
-
 def plot_population_points(
     ax, values: np.ndarray, color: str, alpha: float, markersize: float
 ) -> None:
@@ -216,7 +212,7 @@ def main() -> None:
     trial_ts = filter_trials(trial_ts)
 
     peak_df = peak_matrix_for_stims(spike_times_per_unit, extract_stimuli(trial_ts))
-    peak_subtracted_df = baseline_to_first_flash(peak_df)
+    peak_subtracted_df = peak_df.subtract(peak_df["peak_first_flash"], axis=0)
 
     left_trials = trial_ts[trial_ts["response_side"] == 0].copy()
     right_trials = trial_ts[trial_ts["response_side"] == 1].copy()
@@ -232,8 +228,12 @@ def main() -> None:
     right_peak_df = peak_matrix_for_stims(
         spike_times_per_unit, extract_stimuli(right_trials)
     )
-    left_peak_subtracted_df = baseline_to_first_flash(left_peak_df)
-    right_peak_subtracted_df = baseline_to_first_flash(right_peak_df)
+    left_peak_subtracted_df = left_peak_df.subtract(
+        left_peak_df["peak_first_flash"], axis=0
+    )
+    right_peak_subtracted_df = right_peak_df.subtract(
+        right_peak_df["peak_first_flash"], axis=0
+    )
 
     figures = {
         "adaptation_mean.pdf": make_mean_plot(peak_subtracted_df),

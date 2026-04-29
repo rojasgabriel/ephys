@@ -34,23 +34,15 @@ from labdata.schema import EphysRecording, SpikeSorting, UnitCount, UnitMetrics
 from matplotlib.backends.backend_pdf import PdfPages
 
 from ephys.src.config.double_peak import (
-    BASELINE_WINDOW,
-    MIN_PEAK_HEIGHT_ABS,
-    PEAK_KWARGS,
     PETH_KWARGS,
-    SELECTIVITY_KWARGS,
 )
-from ephys.src.utils.double_peak_helpers import (
-    baseline_mean,
+from ephys.src.utils.grb006_data import (
     fetch_grb006_db_spike_times,
     load_grb006_first_stim,
 )
+from ephys.src.utils.peak_classification import canonical_double_peak_rows
 from ephys.src.utils.utils_IO import fetch_session_events
-from ephys.src.utils.utils_analysis import (
-    classify_peak_count,
-    compute_population_peth,
-    compute_unit_selectivity,
-)
+from ephys.src.utils.utils_analysis import compute_population_peth
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -140,12 +132,6 @@ def _get_first_stim(subject: str, session: str) -> np.ndarray:
 
 
 def _classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFrame:
-    """Classify double-peak units using canonical pipeline.
-
-    See src/config/double_peak.py for parameter rationale.
-    Pipeline: FDR selectivity → prominence-based peak detection on excited
-    units → require both peaks ≥ MIN_PEAK_HEIGHT_ABS sp/s above baseline.
-    """
     unit_ids = df["unit_id"].tolist()
     spike_times = df["spike_times_s"].tolist()
 
@@ -158,25 +144,10 @@ def _classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFr
         alignment_times=first_stim,
         **PETH_KWARGS,
     )
-
-    _, masks = compute_unit_selectivity(
-        peth, bin_edges, unit_ids=unit_ids, **SELECTIVITY_KWARGS
+    double_peak_rows, _, _ = canonical_double_peak_rows(
+        peth, bin_edges, bin_centers, unit_ids
     )
-    exc_idx = np.where(masks["excited"])[0]
-    exc_ids = [unit_ids[i] for i in exc_idx]
-    exc_peth = peth[exc_idx]
-
-    peaks_df = classify_peak_count(
-        exc_peth, bin_centers, unit_ids=exc_ids, **PEAK_KWARGS
-    )
-
-    double_ids: set[int] = set()
-    for _, row in peaks_df.loc[peaks_df["n_peaks"] == 2].iterrows():
-        uid = int(row["unit"])
-        i = exc_ids.index(uid)
-        bl = baseline_mean(exc_peth[i], bin_centers, BASELINE_WINDOW)
-        if min(float(h) - bl for h in row["peak_heights"]) >= MIN_PEAK_HEIGHT_ABS:
-            double_ids.add(uid)
+    double_ids = set(double_peak_rows["unit"].astype(int).tolist())
 
     df["is_double"] = df["unit_id"].isin(double_ids)
     if double_ids:

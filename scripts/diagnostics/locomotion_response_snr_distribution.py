@@ -28,7 +28,7 @@ from ephys.src.utils.utils_analysis import (
     compute_population_peth,
     extract_conditioned_stim_anchors,
 )
-from ephys.src.utils.double_peak_helpers import (
+from ephys.src.utils.grb006_data import (
     fetch_grb006_db_spike_times,
     resolve_grb006_trial_ts_path,
 )

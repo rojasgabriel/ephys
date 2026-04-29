@@ -30,7 +30,7 @@ from ephys.src.config.double_peak import (
     PETH_KWARGS,
     SELECTIVITY_KWARGS,
 )
-from ephys.src.utils.double_peak_helpers import (
+from ephys.src.utils.peak_classification import (
     baseline_mean as _baseline_mean,
     mark_peaks,
     plot_mean_sem_trace as plot_trace,

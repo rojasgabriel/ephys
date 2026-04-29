@@ -31,7 +31,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from ephys.src.config.locomotion import BASELINE_WINDOW, PETH_KWARGS, RESP_WINDOW
-from ephys.src.utils.double_peak_helpers import load_grb006_hybrid_session_inputs
+from ephys.src.utils.grb006_data import load_grb006_hybrid_session_inputs
+from ephys.src.utils.trial_alignment import enrich_chipmunk_trial_table
+from ephys.src.utils.unit_metrics import fetch_waveform_durations_ms
 from ephys.src.utils.utils_analysis import (
     build_trial_stim_classification,
     compute_population_peth,
@@ -82,157 +84,6 @@ def mean_and_t_ci(values: np.ndarray, *, log_scale: bool) -> tuple[float, float,
     return mean_value, lower, upper
 
 
-def fetch_waveform_durations_ms(
-    subject: str, session: str, unit_ids: list[int]
-) -> np.ndarray:
-    from labdata.schema import EphysRecording, SpikeSorting, UnitCount, UnitMetrics
-
-    session_query = (
-        SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'
-    ).proj()
-    good_unit_rows = (
-        session_query * (UnitCount.Unit & "unit_criteria_id = 1" & "passes = 1")
-    ).fetch("subject_name", "session_name", "unit_id", as_dict=True)
-    metric_table = pd.DataFrame(
-        ((SpikeSorting.Unit & good_unit_rows) * UnitMetrics).fetch(
-            "unit_id", "spike_duration", as_dict=True
-        )
-    )
-    if metric_table.empty:
-        raise RuntimeError(
-            f"No waveform duration rows returned for {subject} {session}."
-        )
-
-    sampling_rate_hz = float(
-        (EphysRecording.ProbeSetting() & session_query).fetch("sampling_rate")[0]
-    )
-    duration_by_unit = dict(
-        zip(
-            metric_table["unit_id"].astype(int).tolist(),
-            metric_table["spike_duration"].astype(float).tolist(),
-        )
-    )
-    missing_unit_ids = [
-        int(unit_id)
-        for unit_id in unit_ids
-        if unit_id not in duration_by_unit or not np.isfinite(duration_by_unit[unit_id])
-    ]
-    if missing_unit_ids:
-        raise RuntimeError(
-            f"Missing waveform duration for {subject} {session} units: "
-            f"{missing_unit_ids[:10]}"
-        )
-
-    raw_durations = np.array(
-        [duration_by_unit[int(unit_id)] for unit_id in unit_ids], dtype=float
-    )
-    if np.any(raw_durations <= 0):
-        raise RuntimeError(
-            f"Non-positive waveform durations encountered for {subject} {session}."
-        )
-
-    durations_look_like_ms = np.all((raw_durations >= 0.05) & (raw_durations < 10))
-    durations_from_samples_ms = raw_durations / sampling_rate_hz * 1000.0
-    durations_look_like_samples = np.all(
-        (durations_from_samples_ms >= 0.05) & (durations_from_samples_ms < 10)
-    )
-
-    if durations_look_like_ms and not durations_look_like_samples:
-        return raw_durations
-    if durations_look_like_samples and not durations_look_like_ms:
-        return durations_from_samples_ms
-    raise RuntimeError(
-        "Waveform duration units are ambiguous. Expected either ms-scale values "
-        "or sample counts that convert cleanly to ms."
-    )
-
-
-def enrich_trial_table(trial_table: pd.DataFrame) -> pd.DataFrame:
-    trial_table = trial_table.reset_index(drop=True).copy()
-    trial_table["prev_response"] = trial_table["response"].shift(1)
-    trial_table["prev_rewarded"] = trial_table["rewarded"].shift(1)
-    trial_table["prev_stim_rate"] = trial_table["stim_rate_vision"].shift(1)
-    return trial_table
-
-
-def local_trial_row_signature(
-    local_trial_row: pd.Series,
-) -> tuple[int | None, int, int]:
-    stimulus_rate = local_trial_row.get("trial_rate")
-    stimulus_rate_key = int(stimulus_rate) if np.isfinite(stimulus_rate) else None
-    outcome_code = int(local_trial_row.get("trial_outcome"))
-    response_side = local_trial_row.get("response_side")
-    if np.isfinite(response_side):
-        choice_code = 1 if int(response_side) == 1 else -1
-    else:
-        choice_code = 0
-    return stimulus_rate_key, choice_code, outcome_code
-
-
-def chipmunk_trial_row_signature(
-    chipmunk_trial_row: pd.Series,
-) -> tuple[int | None, int, int]:
-    stimulus_rate = chipmunk_trial_row.get("stim_rate_vision")
-    stimulus_rate_key = int(stimulus_rate) if np.isfinite(stimulus_rate) else None
-    choice_code = int(chipmunk_trial_row.get("response", 0))
-    if chipmunk_trial_row.get("rewarded", 0) == 1:
-        outcome_code = 1
-    elif chipmunk_trial_row.get("with_choice", 0) == 1:
-        outcome_code = 0
-    else:
-        outcome_code = 2
-    return stimulus_rate_key, choice_code, outcome_code
-
-
-def map_local_trial_rows_to_chipmunk_trials(
-    local_trial_table: pd.DataFrame, chipmunk_trial_table: pd.DataFrame
-) -> np.ndarray:
-    matched_trial_indices = []
-    search_start_index = 0
-    chipmunk_signatures = [
-        chipmunk_trial_row_signature(trial_row)
-        for _, trial_row in chipmunk_trial_table.iterrows()
-    ]
-    for _, local_trial_row in local_trial_table.iterrows():
-        target_signature = local_trial_row_signature(local_trial_row)
-        matched_index = None
-        for chipmunk_index in range(search_start_index, len(chipmunk_signatures)):
-            if chipmunk_signatures[chipmunk_index] == target_signature:
-                matched_index = chipmunk_index
-                break
-        if matched_index is None:
-            relaxed_signature = (target_signature[0], target_signature[2])
-            for chipmunk_index in range(search_start_index, len(chipmunk_signatures)):
-                probe_signature = chipmunk_signatures[chipmunk_index]
-                if (probe_signature[0], probe_signature[2]) == relaxed_signature:
-                    matched_index = chipmunk_index
-                    break
-        if matched_index is None:
-            raise RuntimeError(
-                "Could not align local trial rows to Chipmunk trial rows "
-                f"for {target_signature} starting at full trial index "
-                f"{search_start_index}."
-            )
-        matched_trial_indices.append(matched_index)
-        search_start_index = matched_index + 1
-    return np.asarray(matched_trial_indices, dtype=int)
-
-
-def fetch_chipmunk_trial_table(subject: str, session: str) -> pd.DataFrame:
-    from labdata.schema import DecisionTask  # noqa: F401
-    from chipmunk import Chipmunk  # type: ignore
-
-    restriction = f"subject_name = '{subject}' AND session_name = '{session}'"
-    chipmunk_trial_table = pd.DataFrame(
-        (Chipmunk * Chipmunk.Trial * Chipmunk.TrialParameters & restriction).fetch(
-            order_by="trial_num"
-        )
-    )
-    if chipmunk_trial_table.empty:
-        raise RuntimeError(f"Could not load Chipmunk trials for {subject} {session}.")
-    return enrich_trial_table(chipmunk_trial_table)
-
-
 def load_db_trial_classification(subject: str, session: str) -> pd.DataFrame:
     from ephys.src.utils.utils_IO import fetch_session_events, fetch_trial_metadata
 
@@ -240,7 +91,7 @@ def load_db_trial_classification(subject: str, session: str) -> pd.DataFrame:
     trial_table = fetch_trial_metadata(subject, session, aligned_events)
     if trial_table is None:
         raise RuntimeError(f"Could not load trial metadata for {subject} {session}.")
-    trial_table = enrich_trial_table(trial_table)
+    trial_table = enrich_chipmunk_trial_table(trial_table)
     return build_trial_stim_classification(aligned_events, trial_table).reset_index(
         drop=True
     )
@@ -252,7 +103,9 @@ def load_grb006_subject_data() -> dict[str, object]:
     unit_ids, spike_times_by_unit, chipmunk_trial_table, local_trial_table = (
         load_grb006_hybrid_session_inputs()
     )
-    waveform_duration_ms = fetch_waveform_durations_ms(subject, session, unit_ids)
+    waveform_duration_ms = fetch_waveform_durations_ms(
+        subject, session, unit_ids, strict=True
+    )
     print(
         f"  Units: {len(unit_ids)}  Trials: {len(chipmunk_trial_table)}  "
         f"Local rows: {len(local_trial_table)}"
@@ -276,7 +129,9 @@ def load_grb058_subject_data() -> dict[str, object]:
     spike_times_by_unit_map = fetch_good_units(subject, session)
     unit_ids = list(spike_times_by_unit_map.keys())
     spike_times_by_unit = list(spike_times_by_unit_map.values())
-    waveform_duration_ms = fetch_waveform_durations_ms(subject, session, unit_ids)
+    waveform_duration_ms = fetch_waveform_durations_ms(
+        subject, session, unit_ids, strict=True
+    )
     print(f"  Units: {len(unit_ids)}  Trial rows: {len(trial_classification)}")
     return {
         "subject": subject,

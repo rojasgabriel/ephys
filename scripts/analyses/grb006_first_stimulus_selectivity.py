@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from ephys.src.utils.double_peak_helpers import (
+from ephys.src.utils.grb006_data import (
     fetch_grb006_db_spike_times,
     resolve_grb006_trial_ts_path,
 )

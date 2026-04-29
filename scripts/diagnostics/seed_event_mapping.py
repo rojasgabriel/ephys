@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from labdata.schema import DatasetEvents
 
-from ephys.src.utils.double_peak_helpers import resolve_grb006_trial_ts_path
+from ephys.src.utils.grb006_data import resolve_grb006_trial_ts_path
 from labdata_plugin.analysisschema import EventMapping
 
 GRB006_KEY = {

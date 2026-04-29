@@ -34,7 +34,9 @@ from ephys.src.config.locomotion import (
     RATE_SPLIT_HZ,
     RESP_WINDOW,
 )
-from ephys.src.utils.double_peak_helpers import load_grb006_hybrid_session_inputs
+from ephys.src.utils.grb006_data import load_grb006_hybrid_session_inputs
+from ephys.src.utils.trial_alignment import enrich_chipmunk_trial_table
+from ephys.src.utils.unit_metrics import fetch_spike_duration_ms
 from ephys.src.utils.utils_analysis import (
     build_trial_stim_classification,
     compute_population_peth,
@@ -300,132 +302,6 @@ def extract_comparison_anchors(
     raise ValueError(f"Unknown comparison mode: {comparison.mode}")
 
 
-def fetch_spike_duration_ms(
-    subject: str, session: str, unit_ids: list[int]
-) -> np.ndarray:
-    from labdata.schema import EphysRecording, SpikeSorting, UnitCount, UnitMetrics
-
-    sess_q = (
-        SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'
-    ).proj()
-    good_ids = (
-        sess_q * (UnitCount.Unit & "unit_criteria_id = 1" & "passes = 1")
-    ).fetch("subject_name", "session_name", "unit_id", as_dict=True)
-    metric_rows = pd.DataFrame(
-        ((SpikeSorting.Unit & good_ids) * UnitMetrics).fetch(
-            "unit_id", "spike_duration", as_dict=True
-        )
-    )
-    if metric_rows.empty:
-        return np.full(len(unit_ids), np.nan, dtype=float)
-
-    srate = float((EphysRecording.ProbeSetting() & sess_q).fetch("sampling_rate")[0])
-    med = metric_rows["spike_duration"].dropna()
-    if len(med) and med.median() > 100:
-        metric_rows["spike_duration_ms"] = (
-            metric_rows["spike_duration"] / srate * 1000.0
-        )
-    else:
-        metric_rows["spike_duration_ms"] = metric_rows["spike_duration"]
-    dur_map = dict(
-        zip(
-            metric_rows["unit_id"].astype(int).tolist(),
-            metric_rows["spike_duration_ms"].astype(float).tolist(),
-        )
-    )
-    return np.array([dur_map.get(int(uid), np.nan) for uid in unit_ids], dtype=float)
-
-
-def load_local_trial_ts(
-    trial_ts_path: Path,
-) -> tuple[pd.DataFrame, np.ndarray]:
-    trial_ts = pd.read_pickle(trial_ts_path).reset_index(drop=True).copy()
-    trial_ts["trial_idx"] = np.arange(len(trial_ts))
-    first_stim_times = trial_ts["first_stim_ts"].to_numpy(dtype=float)
-    first_stim_times = first_stim_times[np.isfinite(first_stim_times)]
-    return trial_ts, first_stim_times
-
-
-def enrich_trial_df(trial_df: pd.DataFrame) -> pd.DataFrame:
-    trial_df = trial_df.reset_index(drop=True).copy()
-    trial_df["prev_response"] = trial_df["response"].shift(1)
-    trial_df["prev_rewarded"] = trial_df["rewarded"].shift(1)
-    trial_df["prev_stim_rate"] = trial_df["stim_rate_vision"].shift(1)
-    return trial_df
-
-
-def derive_local_trial_signature(local_row: pd.Series) -> tuple[int | None, int, int]:
-    rate = local_row.get("trial_rate")
-    rate_key = int(rate) if np.isfinite(rate) else None
-    outcome = int(local_row.get("trial_outcome"))
-    side = local_row.get("response_side")
-    if np.isfinite(side):
-        choice = 1 if int(side) == 1 else -1
-    else:
-        choice = 0
-    return rate_key, choice, outcome
-
-
-def derive_full_trial_signature(full_row: pd.Series) -> tuple[int | None, int, int]:
-    rate = full_row.get("stim_rate_vision")
-    rate_key = int(rate) if np.isfinite(rate) else None
-    choice = int(full_row.get("response", 0))
-    if full_row.get("rewarded", 0) == 1:
-        outcome = 1
-    elif full_row.get("with_choice", 0) == 1:
-        outcome = 0
-    else:
-        outcome = 2
-    return rate_key, choice, outcome
-
-
-def align_local_trials_to_full_trial_df(
-    local_trial_ts: pd.DataFrame, full_trial_df: pd.DataFrame
-) -> np.ndarray:
-    matched_idx = []
-    start = 0
-    full_signatures = [
-        derive_full_trial_signature(row) for _, row in full_trial_df.iterrows()
-    ]
-    for _, local_row in local_trial_ts.iterrows():
-        target = derive_local_trial_signature(local_row)
-        found = None
-        for idx in range(start, len(full_signatures)):
-            if full_signatures[idx] == target:
-                found = idx
-                break
-        if found is None:
-            relaxed = (target[0], target[2])
-            for idx in range(start, len(full_signatures)):
-                probe = full_signatures[idx]
-                if (probe[0], probe[2]) == relaxed:
-                    found = idx
-                    break
-        if found is None:
-            raise RuntimeError(
-                "Could not align local paired trial rows to Chipmunk trial rows "
-                f"for {target} starting at full trial index {start}."
-            )
-        matched_idx.append(found)
-        start = found + 1
-    return np.asarray(matched_idx, dtype=int)
-
-
-def fetch_chipmunk_session_trials(subject: str, session: str) -> pd.DataFrame:
-    from labdata.schema import DecisionTask  # noqa: F401
-    from chipmunk import Chipmunk  # type: ignore
-
-    restriction = f"subject_name = '{subject}' AND session_name = '{session}'"
-    trial_df = pd.DataFrame(
-        (Chipmunk * Chipmunk.Trial * Chipmunk.TrialParameters & restriction).fetch(
-            order_by="trial_num"
-        )
-    )
-    if trial_df.empty:
-        raise RuntimeError(f"Could not load Chipmunk trials for {subject} {session}")
-    return enrich_trial_df(trial_df)
-
-
 def load_db_behavior(
     subject: str, session: str
 ) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
@@ -436,7 +312,7 @@ def load_db_behavior(
     if trial_df is None:
         raise RuntimeError(f"Could not load trial metadata for {subject} {session}")
 
-    trial_df = enrich_trial_df(trial_df)
+    trial_df = enrich_chipmunk_trial_table(trial_df)
     trial_ts = build_trial_stim_classification(align_ev, trial_df).reset_index(
         drop=True
     )

@@ -33,7 +33,7 @@ from matplotlib.figure import Figure
 from matplotlib.widgets import Button
 from scipy.stats import sem
 
-from ephys.src.utils.double_peak_helpers import (
+from ephys.src.utils.grb006_data import (
     GRB006_SESSION,
     GRB006_SUBJECT,
     load_grb006_hybrid_session_inputs,

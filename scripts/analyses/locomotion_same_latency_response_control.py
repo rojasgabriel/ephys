@@ -15,7 +15,6 @@ Quality gate:
 
 from dataclasses import dataclass
 from pathlib import Path
-import logging
 
 import matplotlib
 import numpy as np
@@ -36,7 +35,7 @@ from ephys.src.config.locomotion import (
     RESP_WINDOW,
 )
 from ephys.src.utils.grb006_data import load_grb006_hybrid_session_inputs
-from ephys.src.utils.session_inputs import load_db_behavior, trial_start_from_row
+from ephys.src.utils.utils_IO import load_db_behavior, trial_start_from_row
 from ephys.src.utils.unit_metrics import fetch_spike_duration_ms
 from ephys.src.utils.utils_analysis import (
     compute_population_peth,
@@ -1688,10 +1687,6 @@ def build_figure(results):
 
 
 def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
     grb006 = load_local_spikes_db_behavior(
         subject="GRB006",
         session="20240821_121447",

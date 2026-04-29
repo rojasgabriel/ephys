@@ -23,11 +23,10 @@ from ephys.src.config.locomotion import (
     PETH_KWARGS,
     RESP_WINDOW,
 )
-from ephys.src.utils.confidence import mean_and_t_ci
 from ephys.src.utils.grb006_data import load_grb006_hybrid_session_inputs
-from ephys.src.utils.session_inputs import load_db_behavior, trial_start_from_row
 from ephys.src.utils.unit_metrics import fetch_spike_duration_ms
-from ephys.src.utils.utils_analysis import compute_population_peth
+from ephys.src.utils.utils_IO import load_db_behavior, trial_start_from_row
+from ephys.src.utils.utils_analysis import compute_population_peth, mean_and_t_ci
 
 
 FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/locomotion")

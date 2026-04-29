@@ -1,5 +1,3 @@
-import logging
-
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
@@ -7,8 +5,6 @@ from scipy.signal import find_peaks
 from statsmodels.stats.multitest import multipletests
 from typing import Optional, Sequence
 from spks.event_aligned import population_peth  # type: ignore
-
-logger = logging.getLogger(__name__)
 
 
 def compute_population_peth(
@@ -570,9 +566,43 @@ def find_unique_cross_trial_offset_pairs(stims_offset_df, wiggle_room=0.1):
             used_movement_indices.add(move_idx)
 
     matched_df = pd.DataFrame(matched_pairs)
-    logger.info(
-        "Found %s unique cross-trial pairs with offset difference <= %ss.",
-        len(matched_df),
-        wiggle_room,
+    print(
+        f"Found {len(matched_df)} unique cross-trial pairs with offset difference <= {wiggle_room}s."
     )
     return matched_df
+
+
+def mean_and_t_ci(
+    values: np.ndarray,
+    *,
+    log_scale: bool,
+    ci_level: float,
+    drop_nonfinite: bool,
+) -> tuple[float, float, float]:
+    values = np.asarray(values, dtype=float)
+    if drop_nonfinite:
+        values = values[np.isfinite(values)]
+    if values.size == 0:
+        raise ValueError("mean_and_t_ci requires at least one value.")
+    if values.size == 1:
+        mean_value = float(values[0])
+        return mean_value, mean_value, mean_value
+
+    if log_scale:
+        log_values = np.log(values)
+        mean_log = float(np.mean(log_values))
+        dof = values.size - 1
+        t_crit = float(stats.t.ppf((1.0 + ci_level) / 2.0, dof))
+        sem_log = float(np.std(log_values, ddof=1)) / np.sqrt(values.size)
+        lower = float(np.exp(mean_log - t_crit * sem_log))
+        upper = float(np.exp(mean_log + t_crit * sem_log))
+        mean_value = float(np.exp(mean_log))
+        return mean_value, lower, upper
+
+    mean_value = float(np.mean(values))
+    dof = values.size - 1
+    t_crit = float(stats.t.ppf((1.0 + ci_level) / 2.0, dof))
+    sem_value = float(np.std(values, ddof=1)) / np.sqrt(values.size)
+    lower = mean_value - t_crit * sem_value
+    upper = mean_value + t_crit * sem_value
+    return mean_value, lower, upper

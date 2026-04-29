@@ -30,13 +30,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from ephys.src.config.locomotion import BASELINE_WINDOW, PETH_KWARGS, RESP_WINDOW
-from ephys.src.utils.confidence import mean_and_t_ci
 from ephys.src.utils.grb006_data import load_grb006_hybrid_session_inputs
 from ephys.src.utils.trial_alignment import enrich_chipmunk_trial_table
 from ephys.src.utils.unit_metrics import fetch_waveform_durations_ms
 from ephys.src.utils.utils_analysis import (
     build_trial_stim_classification,
     compute_population_peth,
+    mean_and_t_ci,
 )
 
 FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/locomotion")

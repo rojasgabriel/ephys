@@ -17,20 +17,17 @@ import pandas as pd
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
-from scipy.stats import t
 
 from ephys.src.config.locomotion import (
     BASELINE_WINDOW,
     PETH_KWARGS,
     RESP_WINDOW,
 )
+from ephys.src.utils.confidence import mean_and_t_ci
 from ephys.src.utils.grb006_data import load_grb006_hybrid_session_inputs
-from ephys.src.utils.trial_alignment import enrich_chipmunk_trial_table
+from ephys.src.utils.session_inputs import load_db_behavior, trial_start_from_row
 from ephys.src.utils.unit_metrics import fetch_spike_duration_ms
-from ephys.src.utils.utils_analysis import (
-    build_trial_stim_classification,
-    compute_population_peth,
-)
+from ephys.src.utils.utils_analysis import compute_population_peth
 
 
 FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/locomotion")
@@ -63,24 +60,6 @@ class SessionInputs:
     first_stim_times: np.ndarray
     trial_df: pd.DataFrame
     trial_ts: pd.DataFrame
-
-
-def load_db_behavior(
-    subject: str, session: str
-) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
-    from ephys.src.utils.utils_IO import fetch_session_events, fetch_trial_metadata
-
-    align_ev = fetch_session_events(subject, session)
-    trial_df = fetch_trial_metadata(subject, session, align_ev)
-    if trial_df is None:
-        raise RuntimeError(f"Could not load trial metadata for {subject} {session}")
-
-    trial_df = enrich_chipmunk_trial_table(trial_df)
-    trial_ts = build_trial_stim_classification(align_ev, trial_df).reset_index(
-        drop=True
-    )
-    first_stim_times = np.asarray(align_ev["first_stim_ev_15ms"], dtype=float)
-    return trial_df, trial_ts, first_stim_times
 
 
 def load_local_spikes_db_behavior(
@@ -131,17 +110,6 @@ def load_db_session(subject: str, session: str) -> SessionInputs:
         trial_df=trial_df,
         trial_ts=trial_ts,
     )
-
-
-def trial_start_from_row(row: pd.Series) -> float:
-    if "center_port_entries" in row.index:
-        entries = row["center_port_entries"]
-        if entries is None or len(entries) == 0:
-            return np.nan
-        return float(entries[0])
-    if "cp_entry" in row.index:
-        return float(row["cp_entry"]) if np.isfinite(row["cp_entry"]) else np.nan
-    return np.nan
 
 
 def outcome_label(row: pd.Series) -> str:
@@ -415,37 +383,6 @@ def median_delta_summary(
     return float(np.median(move_sel - stat_sel)), float(
         100 * np.mean(move_sel > stat_sel)
     )
-
-
-def mean_and_t_ci(
-    values: np.ndarray, *, log_scale: bool = False
-) -> tuple[float, float, float]:
-    values = np.asarray(values, dtype=float)
-    values = values[np.isfinite(values)]
-    if values.size == 0:
-        raise ValueError("mean_and_t_ci requires at least one value.")
-    if values.size == 1:
-        value = float(values[0])
-        return value, value, value
-
-    if log_scale:
-        log_values = np.log(values)
-        mean_log = float(np.mean(log_values))
-        dof = values.size - 1
-        t_crit = float(t.ppf((1.0 + MEAN_CI_LEVEL) / 2.0, dof))
-        sem_log = float(np.std(log_values, ddof=1)) / np.sqrt(values.size)
-        lower = float(np.exp(mean_log - t_crit * sem_log))
-        upper = float(np.exp(mean_log + t_crit * sem_log))
-        mean_value = float(np.exp(mean_log))
-        return mean_value, lower, upper
-
-    mean_value = float(np.mean(values))
-    dof = values.size - 1
-    t_crit = float(t.ppf((1.0 + MEAN_CI_LEVEL) / 2.0, dof))
-    sem_value = float(np.std(values, ddof=1)) / np.sqrt(values.size)
-    lower = mean_value - t_crit * sem_value
-    upper = mean_value + t_crit * sem_value
-    return mean_value, lower, upper
 
 
 def draw_violin(
@@ -835,8 +772,18 @@ def plot_behavior_matching_panel(
             label="_nolegend_",
             zorder=2,
         )
-        mean_x, lower_x, upper_x = mean_and_t_ci(x, log_scale=True)
-        mean_y, lower_y, upper_y = mean_and_t_ci(y, log_scale=True)
+        mean_x, lower_x, upper_x = mean_and_t_ci(
+            x,
+            log_scale=True,
+            ci_level=MEAN_CI_LEVEL,
+            drop_nonfinite=True,
+        )
+        mean_y, lower_y, upper_y = mean_and_t_ci(
+            y,
+            log_scale=True,
+            ci_level=MEAN_CI_LEVEL,
+            drop_nonfinite=True,
+        )
         ax.errorbar(
             mean_x,
             mean_y,

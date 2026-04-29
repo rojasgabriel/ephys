@@ -15,6 +15,7 @@ Quality gate:
 
 from dataclasses import dataclass
 from pathlib import Path
+import logging
 
 import matplotlib
 import numpy as np
@@ -35,10 +36,9 @@ from ephys.src.config.locomotion import (
     RESP_WINDOW,
 )
 from ephys.src.utils.grb006_data import load_grb006_hybrid_session_inputs
-from ephys.src.utils.trial_alignment import enrich_chipmunk_trial_table
+from ephys.src.utils.session_inputs import load_db_behavior, trial_start_from_row
 from ephys.src.utils.unit_metrics import fetch_spike_duration_ms
 from ephys.src.utils.utils_analysis import (
-    build_trial_stim_classification,
     compute_population_peth,
     compute_unit_selectivity,
     find_unique_cross_trial_offset_pairs,
@@ -193,17 +193,6 @@ def extract_session_conditioned_anchors(
     )
 
 
-def trial_start_from_row(row: pd.Series) -> float:
-    if "center_port_entries" in row.index:
-        entries = row["center_port_entries"]
-        if entries is None or len(entries) == 0:
-            return np.nan
-        return float(entries[0])
-    if "cp_entry" in row.index:
-        return float(row["cp_entry"]) if np.isfinite(row["cp_entry"]) else np.nan
-    return np.nan
-
-
 def extract_offset_matched_anchors(
     trial_ts: pd.DataFrame,
     offset_window_s: tuple[float, float],
@@ -300,24 +289,6 @@ def extract_comparison_anchors(
             wiggle_room_s=comparison.wiggle_room_s,
         )
     raise ValueError(f"Unknown comparison mode: {comparison.mode}")
-
-
-def load_db_behavior(
-    subject: str, session: str
-) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
-    from ephys.src.utils.utils_IO import fetch_session_events, fetch_trial_metadata
-
-    align_ev = fetch_session_events(subject, session)
-    trial_df = fetch_trial_metadata(subject, session, align_ev)
-    if trial_df is None:
-        raise RuntimeError(f"Could not load trial metadata for {subject} {session}")
-
-    trial_df = enrich_chipmunk_trial_table(trial_df)
-    trial_ts = build_trial_stim_classification(align_ev, trial_df).reset_index(
-        drop=True
-    )
-    first_stim_times = np.asarray(align_ev["first_stim_ev_15ms"], dtype=float)
-    return trial_df, trial_ts, first_stim_times
 
 
 def load_local_spikes_db_behavior(
@@ -1717,6 +1688,10 @@ def build_figure(results):
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(levelname)s %(name)s: %(message)s",
+    )
     grb006 = load_local_spikes_db_behavior(
         subject="GRB006",
         session="20240821_121447",

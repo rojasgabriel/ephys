@@ -25,12 +25,12 @@ import matplotlib
 from matplotlib import colormaps
 import numpy as np
 import pandas as pd
-from scipy.stats import t
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from ephys.src.config.locomotion import BASELINE_WINDOW, PETH_KWARGS, RESP_WINDOW
+from ephys.src.utils.confidence import mean_and_t_ci
 from ephys.src.utils.grb006_data import load_grb006_hybrid_session_inputs
 from ephys.src.utils.trial_alignment import enrich_chipmunk_trial_table
 from ephys.src.utils.unit_metrics import fetch_waveform_durations_ms
@@ -53,35 +53,6 @@ MODE_SPECS = [
 
 BACKGROUND_DOT_ALPHA = 0.2
 MEAN_CI_LEVEL = 0.95
-
-
-def mean_and_t_ci(values: np.ndarray, *, log_scale: bool) -> tuple[float, float, float]:
-    values = np.asarray(values, dtype=float)
-    if values.size == 0:
-        raise ValueError("mean_and_t_ci requires at least one value.")
-
-    if values.size == 1:
-        mean_value = float(values[0])
-        return mean_value, mean_value, mean_value
-
-    if log_scale:
-        log_values = np.log(values)
-        mean_log = float(np.mean(log_values))
-        dof = values.size - 1
-        t_crit = float(t.ppf((1.0 + MEAN_CI_LEVEL) / 2.0, dof))
-        sem_log = float(np.std(log_values, ddof=1)) / np.sqrt(values.size)
-        lower = float(np.exp(mean_log - t_crit * sem_log))
-        upper = float(np.exp(mean_log + t_crit * sem_log))
-        mean_value = float(np.exp(mean_log))
-        return mean_value, lower, upper
-
-    mean_value = float(np.mean(values))
-    dof = values.size - 1
-    t_crit = float(t.ppf((1.0 + MEAN_CI_LEVEL) / 2.0, dof))
-    sem_value = float(np.std(values, ddof=1)) / np.sqrt(values.size)
-    lower = mean_value - t_crit * sem_value
-    upper = mean_value + t_crit * sem_value
-    return mean_value, lower, upper
 
 
 def load_db_trial_classification(subject: str, session: str) -> pd.DataFrame:
@@ -352,10 +323,16 @@ def plot_panel(
                 zorder=2,
             )
             mean_x, lower_x, upper_x = mean_and_t_ci(
-                plotted_stationary[class_mask], log_scale=log_scale
+                plotted_stationary[class_mask],
+                log_scale=log_scale,
+                ci_level=MEAN_CI_LEVEL,
+                drop_nonfinite=False,
             )
             mean_y, lower_y, upper_y = mean_and_t_ci(
-                plotted_movement[class_mask], log_scale=log_scale
+                plotted_movement[class_mask],
+                log_scale=log_scale,
+                ci_level=MEAN_CI_LEVEL,
+                drop_nonfinite=False,
             )
             xerr = np.array([[mean_x - lower_x], [upper_x - mean_x]])
             yerr = np.array([[mean_y - lower_y], [upper_y - mean_y]])

@@ -1,3 +1,5 @@
+import logging
+
 import pandas as pd
 import numpy as np
 import scipy.stats as stats
@@ -5,6 +7,8 @@ from scipy.signal import find_peaks
 from statsmodels.stats.multitest import multipletests
 from typing import Optional, Sequence
 from spks.event_aligned import population_peth  # type: ignore
+
+logger = logging.getLogger(__name__)
 
 
 def compute_population_peth(
@@ -566,7 +570,9 @@ def find_unique_cross_trial_offset_pairs(stims_offset_df, wiggle_room=0.1):
             used_movement_indices.add(move_idx)
 
     matched_df = pd.DataFrame(matched_pairs)
-    print(
-        f"Found {len(matched_df)} unique cross-trial pairs with offset difference <= {wiggle_room}s."
+    logger.info(
+        "Found %s unique cross-trial pairs with offset difference <= %ss.",
+        len(matched_df),
+        wiggle_room,
     )
     return matched_df

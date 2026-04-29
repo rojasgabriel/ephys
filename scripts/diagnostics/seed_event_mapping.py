@@ -120,6 +120,13 @@ def _normalize_event_row(row: dict) -> dict:
     }
 
 
+def _event_count(row: dict) -> int:
+    timestamps = row.get("event_timestamps")
+    if timestamps is None:
+        return 0
+    return len(np.asarray(timestamps))
+
+
 def build_grb006_ai0_row() -> dict:
     visual_onsets = load_grb006_visual_onsets()
     return {
@@ -130,23 +137,75 @@ def build_grb006_ai0_row() -> dict:
     }
 
 
-def ensure_grb006_ai0(apply: bool) -> dict:
+def insert_grb006_ai0_if_missing(
+    apply: bool,
+    replace_existing_ai0: bool = False,
+) -> dict:
     row = build_grb006_ai0_row()
     key = {**GRB006_KEY, "event_name": row["event_name"]}
     relation = DatasetEvents.Digital() & key
+    print(
+        "Local GRB006 ai0 source contains "
+        f"{_event_count(row)} visual-stim timestamps from trial_ts.pkl"
+    )
     if len(relation):
+        existing_row = _normalize_event_row((relation).fetch1())
+        existing_count = _event_count(existing_row)
+        if not replace_existing_ai0:
+            print(
+                f"{'Keeping' if apply else 'Would keep'} existing "
+                f"{row['dataset_name']}:{row['stream_name']}:{row['event_name']} "
+                f"with {existing_count} timestamps "
+                f"(local source has {_event_count(row)})."
+            )
+            return existing_row
+
         print(
-            f"{'Keeping' if apply else 'Would keep'} existing "
-            f"{row['dataset_name']}:{row['stream_name']}:{row['event_name']}"
+            f"{'Replacing' if apply else 'Would replace'} existing "
+            f"{row['dataset_name']}:{row['stream_name']}:{row['event_name']} "
+            f"with {_event_count(row)} timestamps "
+            f"(existing row has {existing_count})."
         )
-        return _normalize_event_row((relation).fetch1())
+        if apply:
+            relation.delete(force=True)
+            DatasetEvents.Digital().insert1(row, allow_direct_insert=True)
+        return _normalize_event_row(row)
+
     if apply:
         DatasetEvents.Digital().insert1(row, allow_direct_insert=True)
     print(
         f"{'Inserted' if apply else 'Would insert'} "
-        f"{row['dataset_name']}:{row['stream_name']}:{row['event_name']}"
+        f"{row['dataset_name']}:{row['stream_name']}:{row['event_name']} "
+        f"with {_event_count(row)} timestamps."
     )
     return _normalize_event_row(row)
+
+
+def _event_mapping_message(row: dict) -> str:
+    return (
+        f"EventMapping {row['subject_name']} {row['session_name']} "
+        f"{row['event_name']} -> {row['source_stream_name']}:{row['source_event_name']}"
+    )
+
+
+def set_event_mapping_rows(rows: list[dict], apply: bool) -> None:
+    for row in rows:
+        key = {
+            "subject_name": row["subject_name"],
+            "session_name": row["session_name"],
+            "event_name": row["event_name"],
+        }
+        relation = EventMapping() & key
+        exists = len(relation) > 0
+        if apply and exists:
+            relation.delete(force=True)
+        if apply:
+            EventMapping().insert1(row)
+        if apply:
+            action = "Replaced" if exists else "Inserted"
+        else:
+            action = "Would set"
+        print(f"{action} {_event_mapping_message(row)}")
 
 
 def build_event_mapping_rows(
@@ -199,34 +258,21 @@ def build_event_mapping_rows(
     return mapped_rows
 
 
-def upsert_event_mapping_rows(rows: list[dict], apply: bool) -> None:
-    for row in rows:
-        key = {
-            "subject_name": row["subject_name"],
-            "session_name": row["session_name"],
-            "event_name": row["event_name"],
-        }
-        relation = EventMapping() & key
-        if apply and len(relation):
-            relation.delete(force=True)
-        if apply:
-            EventMapping().insert1(row)
-        print(
-            f"{'Upserted' if apply else 'Would upsert'} EventMapping "
-            f"{row['subject_name']} {row['session_name']} {row['event_name']} -> "
-            f"{row['source_stream_name']}:{row['source_event_name']}"
-        )
-
-
-def seed_event_mapping(apply: bool) -> None:
-    grb006_ai0_row = ensure_grb006_ai0(apply=apply)
+def seed_event_mapping(
+    apply: bool,
+    replace_existing_ai0: bool = False,
+) -> None:
+    grb006_ai0_row = insert_grb006_ai0_if_missing(
+        apply=apply,
+        replace_existing_ai0=replace_existing_ai0,
+    )
     for spec in SESSION_MAPPING_SPECS:
         pending_rows = (
             [grb006_ai0_row]
             if (not apply and spec["subject_name"] == "GRB006")
             else None
         )
-        upsert_event_mapping_rows(
+        set_event_mapping_rows(
             build_event_mapping_rows(spec, pending_rows=pending_rows),
             apply=apply,
         )
@@ -241,12 +287,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Write changes to DataJoint. Without this flag the script only prints the planned actions.",
     )
+    parser.add_argument(
+        "--replace-existing-ai0",
+        action="store_true",
+        help="Replace the existing GRB006 nidq:ai0 row if present. Requires --apply to write.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    seed_event_mapping(apply=args.apply)
+    seed_event_mapping(
+        apply=args.apply,
+        replace_existing_ai0=args.replace_existing_ai0,
+    )
 
 
 if __name__ == "__main__":

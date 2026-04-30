@@ -4,7 +4,8 @@ Deep dive into what changes at trial 100.
 
 import numpy as np
 from scipy.stats import linregress
-from ephys.src.utils.utils_IO import fetch_session_events, fetch_trial_metadata
+from ephys.src.utils.io_chipmunk_trials import fetch_trial_metadata
+from ephys.src.utils.io_digital_events import fetch_session_events
 
 # Load data
 subject, session = "GRB058", "20260312_134952"

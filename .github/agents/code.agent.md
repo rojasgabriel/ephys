@@ -11,9 +11,16 @@ You are an expert Python developer embedded in a systems neuroscience lab. Your 
 
 ```
 src/utils/
-  utils_analysis.py   # core analysis: PETHs, selectivity, peak classification
-  utils_IO.py         # data fetching: fetch_good_units, fetch_session_events, fetch_trial_metadata
-  viz.py              # visualization: PSTHViewer, PSTHWidget
+  analysis_peth.py           # population PETH (sp/s)
+  analysis_selectivity.py    # baseline vs response tests
+  analysis_peak_counts.py    # PSTH peak counting
+  analysis_conditioned_stim.py  # locomotion stim classification / anchors
+  analysis_stats.py          # mean + t CI
+  io_digital_events.py     # TTL + EventMapping → alignment dict
+  io_session_units.py      # good units, spike times (s)
+  io_chipmunk_trials.py    # Chipmunk trials aligned to OBX
+  io_behavior.py           # load_db_behavior bundle
+  viz.py                   # PSTHViewer, PSTHWidget
 notebooks/
   selectivity.ipynb   # population selectivity analysis (primary working notebook)
   PSTHViewer.ipynb    # interactive raster/PSTH/heatmap browser
@@ -43,7 +50,7 @@ Project is installed as editable package `ephys`; imports use `from ephys.src.ut
 - Alpha-kernel smoothed: `t_rise=0.001`, `t_decay=0.025` (seconds)
 - Standard params: `pre_seconds=0.1`, `post_seconds=0.15`, `binwidth_ms=10`
 - Output shape: `(n_units, n_trials, n_timebins)`, units are **sp/s**
-- `compute_population_peth()` in `utils_analysis.py` wraps `spks.population_peth` and is the canonical path for firing-rate PETHs
+- `compute_population_peth()` in `analysis_peth.py` wraps `spks.population_peth` and is the canonical path for firing-rate PETHs
 
 ### Selectivity
 - Windows: baseline `(-0.04, 0.0)s`, response `(0.06, 0.10)s`
@@ -68,7 +75,7 @@ Project is installed as editable package `ephys`; imports use `from ephys.src.ut
 - **Scripts**: treat each file under `scripts/` as a standalone entrypoint. Use `analyses/` for scientific analyses and figures, `diagnostics/` for data-quality or pipeline checks, and `tools/` for interactive utilities.
 - **labdata_plugin**: treat as the authoritative source for database access, session metadata, and schema logic. Always check for relevant functions in `analysisschema.py` and `utils.py` before rolling your own data access or schema logic.
 - **Don't over-engineer**: implement only what is asked. No extra error handling, abstractions, or configurability for hypothetical future uses.
-- **Keep utility functions in `src/utils/`**: don't duplicate logic in notebooks — extract reusable pieces to `utils_analysis.py` or `viz.py`.
+- **Keep utility functions in `src/utils/`**: don't duplicate logic in notebooks — extract reusable pieces to the appropriate `analysis_*.py` / `io_*.py` module or `viz.py`.
 - **Notebook cells**: use `# Comment` headers. Keep cells focused. Avoid side effects in cells that define functions.
 - **Security**: never hardcode credentials or paths outside the project root. Validate at system boundaries (user input, external APIs) only.
 - **Stats**: don't hand-roll multiple-comparisons correction — use `statsmodels.multipletests`. Don't hand-roll p-values — use `scipy.stats` directly.

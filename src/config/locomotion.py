@@ -1,30 +1,23 @@
-"""Shared parameters for locomotion analyses.
+"""Canonical parameters for locomotion analyses.
 
-Last reviewed: 2026-04-23.
+Last reviewed: 2026-04-29.
 
-These windows are shared by the primary condition-peak locomotion analysis and
-the older shared-peak control script.
+Pipeline:
+  1. PETH (sp/s) with the same unsmoothed event-aligned bins used by the
+     double-peak analyses.
+  2. Baseline subtraction uses the shared stationary baseline window.
 
-Only `PETH_KWARGS`, `BASELINE_WINDOW`, and `RESP_WINDOW` should be assumed to
-apply across locomotion analyses in general. The remaining constants are kept
-here for the older control script and rate-split figures.
-
-DO NOT define shared locomotion windows inline in scripts. Import them here.
+DO NOT define these dicts or windows inline in scripts. Import from here so
+all locomotion analyses move together.
 """
 
 PETH_KWARGS = dict(
-    pre_seconds=0.04,
+    pre_seconds=0.1,
     post_seconds=0.15,
     binwidth_ms=10,
+    t_rise=None,
+    t_decay=None,
 )
 
-BASELINE_WINDOW = (-0.04, 0.0)
+BASELINE_WINDOW = (-0.04, 0.0)  # TODO: extend to -0.05
 RESP_WINDOW = (0.03, 0.12)
-
-# Control-script-specific constants used by the same-latency locomotion analysis.
-PEAK_HALF_WINDOW_S = 0.015
-
-QVAL_ALPHA = 0.05
-
-# 12 Hz separates "low rate" from "high rate" in the rate-split scatters
-RATE_SPLIT_HZ = 12.0

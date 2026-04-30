@@ -1,6 +1,6 @@
 """Canonical parameters for double-peak V1 unit classification.
 
-Last reviewed: 2026-04-19.
+Last reviewed: 2026-04-29.
 
 Pipeline:
   1. PETH (sp/s) with kernel disabled — peaks 30–45 ms apart need fine
@@ -12,7 +12,7 @@ Pipeline:
   4. Height filter: both peaks must clear MIN_PEAK_HEIGHT_ABS sp/s above
      baseline.
 
-A unit is "double-peak" iff selectivity passes (excited=True) AND step 3
+A unit is "double-peak" if selectivity passes (excited=True) AND step 3
 returns n_peaks==2 AND step 4 passes.
 
 DO NOT define these dicts inline in scripts. Import from here so all
@@ -27,19 +27,22 @@ PETH_KWARGS = dict(
     t_decay=None,  # default merges 30-45 ms peaks
 )
 
-BASELINE_WINDOW = (-0.04, 0.0)
-WINDOW = (0.03, 0.12)  # used as both selectivity resp_window AND peak search_window
+BASELINE_WINDOW = (-0.04, 0.0)  # TODO: extend to -0.05
+RESPONSE_WINDOW = (0.03, 0.12)
+# Peak search: start at stimulus onset (0.0 s). Response selectivity stays
+# anchored to the canonical post-latency window above.
+SEARCH_WINDOW = (0.0, 0.12)
 
 SELECTIVITY_KWARGS = dict(
     base_window=BASELINE_WINDOW,
-    resp_window=WINDOW,
+    resp_window=RESPONSE_WINDOW,
     test="wilcoxon",
     correction="fdr_bh",
     alpha=0.05,
 )
 
 PEAK_KWARGS = dict(
-    search_window=WINDOW,
+    search_window=SEARCH_WINDOW,
     baseline_window=BASELINE_WINDOW,
     min_prominence_frac=0.25,
     min_distance_ms=20.0,

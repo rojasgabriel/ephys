@@ -36,13 +36,13 @@ from scipy.stats import sem
 from ephys.src.utils.grb006_data import (
     GRB006_SESSION,
     GRB006_SUBJECT,
-    load_grb006_hybrid_session_inputs,
+    load_grb006_db_session_inputs,
 )
-from ephys.src.utils.utils_analysis import (
+from ephys.src.utils.analysis_conditioned_stim import (
     build_trial_stim_classification,
-    compute_population_peth,
     extract_conditioned_stim_anchors,
 )
+from ephys.src.utils.analysis_peth import compute_population_peth
 
 SHORTCUT_HELP = """\
 Navigation
@@ -76,7 +76,7 @@ Session controls
 def load_grb006_downloads_data() -> tuple[
     dict[int, np.ndarray], np.ndarray, np.ndarray
 ]:
-    unit_ids, spike_times, trial_df, trial_ts = load_grb006_hybrid_session_inputs()
+    unit_ids, spike_times, trial_df, trial_ts = load_grb006_db_session_inputs()
     st_per_unit = dict(zip(unit_ids, spike_times))
     anchors = extract_conditioned_stim_anchors(trial_ts)
     paired_last_stat = np.asarray(anchors["paired_last_stationary"], dtype=float)
@@ -90,11 +90,9 @@ def load_browser_data(
     if subject == GRB006_SUBJECT and session == GRB006_SESSION:
         return load_grb006_downloads_data()
 
-    from ephys.src.utils.utils_IO import (
-        fetch_good_units,
-        fetch_session_events,
-        fetch_trial_metadata,
-    )
+    from ephys.src.utils.io_chipmunk_trials import fetch_trial_metadata
+    from ephys.src.utils.io_digital_events import fetch_session_events
+    from ephys.src.utils.io_session_units import fetch_good_units
 
     st_per_unit = fetch_good_units(subject, session, unit_criteria_id)
     align_ev = fetch_session_events(subject, session)

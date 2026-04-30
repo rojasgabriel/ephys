@@ -10,11 +10,9 @@ from ephys.src.config.double_peak import (
     PETH_KWARGS,
     SELECTIVITY_KWARGS,
 )
-from ephys.src.utils.utils_analysis import (
-    classify_peak_count,
-    compute_population_peth,
-    compute_unit_selectivity,
-)
+from ephys.src.utils.analysis_peak_counts import classify_peak_count
+from ephys.src.utils.analysis_peth import compute_population_peth
+from ephys.src.utils.analysis_selectivity import compute_unit_selectivity
 
 
 def baseline_mean(

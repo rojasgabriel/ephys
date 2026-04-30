@@ -12,6 +12,7 @@ Figure layout:
     ranked by the smaller of the two peak heights above baseline.
 """
 
+import os
 from pathlib import Path
 
 import matplotlib
@@ -38,13 +39,15 @@ from ephys.src.utils.peak_classification import (
     mark_peaks,
     plot_mean_sem_trace as plot_trace,
 )
-from ephys.src.utils.utils_analysis import (
-    classify_peak_count,
-    compute_population_peth,
-    compute_unit_selectivity,
-)
+from ephys.src.utils.analysis_peak_counts import classify_peak_count
+from ephys.src.utils.analysis_peth import compute_population_peth
+from ephys.src.utils.analysis_selectivity import compute_unit_selectivity
 
-OUT_PATH = Path("/Users/gabriel/lib/ephys/figures/double_peak/grb006_examples.pdf")
+FIGURE_ROOT = Path(
+    os.environ.get("EPHYS_FIGURE_ROOT", "/Users/gabriel/lib/ephys/figures")
+)
+OUT_PATH = FIGURE_ROOT / "double_peak" / "grb006_examples.pdf"
+OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 N_PANELS = 6
 

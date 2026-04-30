@@ -25,7 +25,7 @@
 
 ## Code cleanup
 
-- `src/utils/utils_analysis.py:447` — generalize `compute_stim_response_for_trial_subset` so it can compare any two trial subsets, not just stationary vs movement.
+- `analysis_conditioned_stim.py` (or nearby helpers) — generalize `compute_stim_response_for_trial_subset` so it can compare any two trial subsets, not just stationary vs movement.
 - `scripts/diagnostics/grb058_trial_sync_breakdown.py` and `scripts/diagnostics/grb058_trial100_sync_shift.py` are legacy debugging one-offs; either consolidate them or retire them after the sync question is closed.
 
 ## Post-SfN (June–November 2026)

@@ -1,5 +1,5 @@
 import datajoint as dj
-from labdata.schema import DatasetEvents, Session, get_user_schema  # type: ignore  # noqa: F401
+from labdata.schema import get_user_schema
 
 rojasbowe_schema = get_user_schema()
 

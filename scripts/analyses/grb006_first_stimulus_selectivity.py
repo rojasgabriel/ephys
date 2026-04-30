@@ -1,17 +1,14 @@
 #!/Users/gabriel/miniconda3/bin/python
 # %% Import libraries
-import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from ephys.src.utils.grb006_data import (
     fetch_grb006_db_spike_times,
-    resolve_grb006_trial_ts_path,
+    load_grb006_aligned_trial_data,
 )
-from ephys.src.utils.utils_analysis import (
-    compute_population_peth,
-    compute_unit_selectivity,
-)
+from ephys.src.utils.analysis_peth import compute_population_peth
+from ephys.src.utils.analysis_selectivity import compute_unit_selectivity
 
 plt.rcParams["text.usetex"] = False
 plt.rcParams["svg.fonttype"] = "none"
@@ -23,8 +20,8 @@ plt.rcParams["figure.dpi"] = 100
 animal = "GRB006"
 session = "20240821_121447"
 
-trial_ts = pd.read_pickle(resolve_grb006_trial_ts_path())
-_, spike_times = fetch_grb006_db_spike_times()
+_, trial_ts = load_grb006_aligned_trial_data()
+unit_ids, spike_times = fetch_grb006_db_spike_times()
 spike_times_per_unit = np.asarray(spike_times, dtype=object)
 
 
@@ -48,7 +45,6 @@ first_stim_peth, bin_edges, bin_centers = compute_population_peth(
 )
 
 n_units, n_trials, n_timepoints = first_stim_peth.shape
-unit_ids = np.arange(n_units)
 
 # %% Selectivity: baseline vs response (simple + robust)
 # Assumptions:

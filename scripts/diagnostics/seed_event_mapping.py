@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from labdata.schema import DatasetEvents
 
-from ephys.src.utils.grb006_data import resolve_grb006_trial_ts_path
 from labdata_plugin.analysisschema import EventMapping
 
 GRB006_KEY = {
@@ -91,26 +89,19 @@ def infer_canonical_stream(rows: pd.DataFrame) -> tuple[str, str]:
     return candidates[0]
 
 
-def load_grb006_visual_onsets(trial_ts_path: Path | None = None) -> np.ndarray:
-    trial_ts_path = trial_ts_path or resolve_grb006_trial_ts_path()
-    trial_ts = pd.read_pickle(trial_ts_path).reset_index(drop=True)
-    if "stim_ts_visual" not in trial_ts.columns:
-        raise RuntimeError("trial_ts.pkl does not contain stim_ts_visual")
-    visual_stims = [
-        np.asarray(stims, dtype=float)
-        for stims in trial_ts["stim_ts_visual"].tolist()
-        if len(stims)
-    ]
-    if not visual_stims:
-        raise RuntimeError("No visual stim timestamps found in trial_ts.pkl")
-    visual_onsets = np.concatenate(visual_stims)
+def load_grb006_visual_onsets() -> np.ndarray:
+    relation = DatasetEvents.Digital() & {**GRB006_KEY, "event_name": "ai0"}
+    if not len(relation):
+        raise RuntimeError("GRB006 ai0 visual-stim row is missing from the DB")
+    row = relation.fetch1()
+    visual_onsets = np.asarray(row["event_timestamps"], dtype=float)
     visual_onsets = visual_onsets[np.isfinite(visual_onsets)]
     if visual_onsets.size == 0:
-        raise RuntimeError("No finite visual stim timestamps found in trial_ts.pkl")
+        raise RuntimeError("No finite GRB006 visual stim timestamps found in the DB")
     return np.sort(visual_onsets)
 
 
-def _normalize_event_row(row: dict) -> dict:
+def normalize_event_row(row: dict) -> dict:
     return {
         **row,
         "event_timestamps": np.asarray(row["event_timestamps"], dtype=float),
@@ -120,7 +111,7 @@ def _normalize_event_row(row: dict) -> dict:
     }
 
 
-def _event_count(row: dict) -> int:
+def event_count(row: dict) -> int:
     timestamps = row.get("event_timestamps")
     if timestamps is None:
         return 0
@@ -144,44 +135,41 @@ def insert_grb006_ai0_if_missing(
     row = build_grb006_ai0_row()
     key = {**GRB006_KEY, "event_name": row["event_name"]}
     relation = DatasetEvents.Digital() & key
-    print(
-        "Local GRB006 ai0 source contains "
-        f"{_event_count(row)} visual-stim timestamps from trial_ts.pkl"
-    )
+    print(f"DB GRB006 ai0 source contains {event_count(row)} visual-stim timestamps")
     if len(relation):
-        existing_row = _normalize_event_row((relation).fetch1())
-        existing_count = _event_count(existing_row)
+        existing_row = normalize_event_row((relation).fetch1())
+        existing_count = event_count(existing_row)
         if not replace_existing_ai0:
             print(
                 f"{'Keeping' if apply else 'Would keep'} existing "
                 f"{row['dataset_name']}:{row['stream_name']}:{row['event_name']} "
                 f"with {existing_count} timestamps "
-                f"(local source has {_event_count(row)})."
+                f"(local source has {event_count(row)})."
             )
             return existing_row
 
         print(
             f"{'Replacing' if apply else 'Would replace'} existing "
             f"{row['dataset_name']}:{row['stream_name']}:{row['event_name']} "
-            f"with {_event_count(row)} timestamps "
+            f"with {event_count(row)} timestamps "
             f"(existing row has {existing_count})."
         )
         if apply:
             relation.delete(force=True)
             DatasetEvents.Digital().insert1(row, allow_direct_insert=True)
-        return _normalize_event_row(row)
+        return normalize_event_row(row)
 
     if apply:
         DatasetEvents.Digital().insert1(row, allow_direct_insert=True)
     print(
         f"{'Inserted' if apply else 'Would insert'} "
         f"{row['dataset_name']}:{row['stream_name']}:{row['event_name']} "
-        f"with {_event_count(row)} timestamps."
+        f"with {event_count(row)} timestamps."
     )
-    return _normalize_event_row(row)
+    return normalize_event_row(row)
 
 
-def _event_mapping_message(row: dict) -> str:
+def event_mapping_message(row: dict) -> str:
     return (
         f"EventMapping {row['subject_name']} {row['session_name']} "
         f"{row['event_name']} -> {row['source_stream_name']}:{row['source_event_name']}"
@@ -197,15 +185,13 @@ def set_event_mapping_rows(rows: list[dict], apply: bool) -> None:
         }
         relation = EventMapping() & key
         exists = len(relation) > 0
-        if apply and exists:
-            relation.delete(force=True)
-        if apply:
+        if apply and not exists:
             EventMapping().insert1(row)
         if apply:
-            action = "Replaced" if exists else "Inserted"
+            action = "Kept existing" if exists else "Inserted"
         else:
             action = "Would set"
-        print(f"{action} {_event_mapping_message(row)}")
+        print(f"{action} {event_mapping_message(row)}")
 
 
 def build_event_mapping_rows(
@@ -214,15 +200,21 @@ def build_event_mapping_rows(
 ) -> list[dict]:
     rows = fetch_session_rows(spec["subject_name"], spec["session_name"]).copy()
     if pending_rows:
-        pending_df = pd.DataFrame([_normalize_event_row(row) for row in pending_rows])
+        pending_df = pd.DataFrame([normalize_event_row(row) for row in pending_rows])
         rows = pd.concat([rows, pending_df], ignore_index=True)
         rows = rows.drop_duplicates(
             subset=["dataset_name", "stream_name", "event_name"],
             keep="last",
         ).reset_index(drop=True)
-    dataset_name, stream_name = infer_canonical_stream(rows)
-    stream_name = spec.get("stream_name", stream_name)
-    dataset_name = spec.get("dataset_name", dataset_name)
+    if "stream_name" in spec:
+        stream_name = spec["stream_name"]
+        dataset_name = spec.get(
+            "dataset_name",
+            rows.loc[rows["stream_name"] == stream_name, "dataset_name"].iloc[0],
+        )
+    else:
+        dataset_name, stream_name = infer_canonical_stream(rows)
+        dataset_name = spec.get("dataset_name", dataset_name)
 
     mapped_rows: list[dict] = []
     for logical_name, source_event_name in spec["source_event_names"].items():

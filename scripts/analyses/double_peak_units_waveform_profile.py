@@ -13,7 +13,7 @@ all others in blue. FS/RS boundary line at 0.4 ms (visual reference only).
 Classification uses canonical params from src/config/double_peak.py
 (FDR selectivity + 5 sp/s height floor on both peaks).
 
-GRB006 event loading uses local trial_ts.pkl (DB events not available).
+GRB006 event loading uses DB-backed EventMapping rows.
 GRB006 spike times use DB-backed good-unit rows.
 GRB058 is fully DB-backed.
 
@@ -22,7 +22,22 @@ Output
     figures/double_peak/waveform_grid.pdf
 """
 
+# ruff: noqa: E402
+# Imports below follow a repo-root sys.path bootstrap so the script runs with `python scripts/...`.
+
+from __future__ import annotations
+
+import sys
 from pathlib import Path
+
+# Allow running as a script (python scripts/analyses/...) without installing the
+# repo as a package. Required so repo-root modules like `labdata_plugin` are
+# importable before `labdata.schema` is imported below.
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import os
 
 import matplotlib
 
@@ -34,15 +49,21 @@ from labdata.schema import EphysRecording, SpikeSorting, UnitCount, UnitMetrics
 from matplotlib.backends.backend_pdf import PdfPages
 
 from ephys.src.config.double_peak import (
+    BASELINE_WINDOW,
+    MIN_PEAK_HEIGHT_ABS,
+    PEAK_KWARGS,
     PETH_KWARGS,
+    SELECTIVITY_KWARGS,
 )
 from ephys.src.utils.grb006_data import (
     fetch_grb006_db_spike_times,
     load_grb006_first_stim,
 )
-from ephys.src.utils.peak_classification import canonical_double_peak_rows
-from ephys.src.utils.utils_IO import fetch_session_events
-from ephys.src.utils.utils_analysis import compute_population_peth
+from ephys.src.utils.peak_classification import baseline_mean
+from ephys.src.utils.io_digital_events import fetch_session_events
+from ephys.src.utils.analysis_peak_counts import classify_peak_count
+from ephys.src.utils.analysis_peth import compute_population_peth
+from ephys.src.utils.analysis_selectivity import compute_unit_selectivity
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -52,24 +73,29 @@ SESSIONS = [
     ("GRB058", "20260312_134952"),
 ]
 
-OUT_PATH = Path("/Users/gabriel/lib/ephys/figures/double_peak/waveform_grid.pdf")
-OUT_PATH_MONO = Path(
-    "/Users/gabriel/lib/ephys/figures/double_peak/waveform_grid_nocolor.pdf"
+FIGURE_ROOT = Path(
+    os.environ.get(
+        "EPHYS_FIGURE_ROOT", "/Users/gabriel/lib/ephys/figures/test_refactor"
+    )
 )
+OUT_PATH = FIGURE_ROOT / "double_peak" / "waveform_grid.pdf"
+OUT_PATH_MONO = FIGURE_ROOT / "double_peak" / "waveform_grid_nocolor.pdf"
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 UNIT_CRITERIA_ID = 1
 NARROW_BROAD_MS = 0.4  # FS/RS boundary, visual reference only
 
 COL_OTHER = "#4C72B0"
-COL_DOUBLE = "#DD8452"
+COL_STILL_DOUBLE = "#DD8452"  # orange
+COL_NEW_DOUBLE = "#55A868"  # green
+COL_LOST_DOUBLE = "#C44E52"  # red
 
 # ---------------------------------------------------------------------------
 # Data helpers
 # ---------------------------------------------------------------------------
 
 
-def _fetch_unit_table(subject: str, session: str) -> pd.DataFrame:
+def fetch_unit_table(subject: str, session: str) -> pd.DataFrame:
     sess_q = (
         SpikeSorting() & f'subject_name = "{subject}"' & f'session_name = "{session}"'
     ).proj()
@@ -92,7 +118,7 @@ def _fetch_unit_table(subject: str, session: str) -> pd.DataFrame:
 
     srate = float((EphysRecording.ProbeSetting() & sess_q).fetch("sampling_rate")[0])
     if subject == "GRB006":
-        spk_map = _fetch_grb006_spike_times_map()
+        spk_map = fetch_grb006_spike_times_map()
         df["spike_times_s"] = df["unit_id"].apply(
             lambda uid: spk_map.get(int(uid), np.array([]))
         )
@@ -114,25 +140,58 @@ def _fetch_unit_table(subject: str, session: str) -> pd.DataFrame:
     return df.sort_values("depth", ascending=True).reset_index(drop=True)
 
 
-def _fetch_grb006_spike_times_map() -> dict:
+def fetch_grb006_spike_times_map() -> dict:
     """Return {unit_id: spike_times_s} from the DB-backed good-unit rows."""
     unit_ids, spike_times = fetch_grb006_db_spike_times()
     return dict(zip(unit_ids, spike_times))
 
 
-def _get_first_stim(subject: str, session: str) -> np.ndarray:
+def get_first_stim(subject: str, session: str) -> np.ndarray:
     if subject == "GRB006":
         return load_grb006_first_stim()
     align_ev = fetch_session_events(subject, session)
     return align_ev["first_stim_ev_15ms"]
 
 
-def _classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFrame:
+def double_peak_ids_from_peth(
+    peth: np.ndarray,
+    bin_edges: np.ndarray,
+    bin_centers: np.ndarray,
+    unit_ids: list[int],
+    *,
+    peak_kwargs: dict,
+) -> set[int]:
+    """Return unit_ids that pass the canonical double-peak filters."""
+    _, masks = compute_unit_selectivity(
+        peth, bin_edges, unit_ids=unit_ids, **SELECTIVITY_KWARGS
+    )
+    excited_indices = np.where(masks["excited"])[0]
+    excited_unit_ids = [unit_ids[i] for i in excited_indices]
+    excited_peth = peth[excited_indices]
+    peak_rows = classify_peak_count(
+        excited_peth, bin_centers, unit_ids=excited_unit_ids, **peak_kwargs
+    )
+
+    double_ids: set[int] = set()
+    for _, peak_row in peak_rows.loc[peak_rows["n_peaks"] == 2].iterrows():
+        unit_id = int(peak_row["unit"])
+        excited_index = excited_unit_ids.index(unit_id)
+        base = baseline_mean(excited_peth[excited_index], bin_centers, BASELINE_WINDOW)
+        heights_above = [float(h - base) for h in peak_row["peak_heights"]]
+        if min(heights_above) >= MIN_PEAK_HEIGHT_ABS:
+            double_ids.add(unit_id)
+    return double_ids
+
+
+def classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFrame:
     unit_ids = df["unit_id"].tolist()
     spike_times = df["spike_times_s"].tolist()
 
     if len(first_stim) == 0:
         df["is_double"] = False
+        df["was_double"] = False
+        df["became_double"] = False
+        df["lost_double"] = False
         return df
 
     peth, bin_edges, bin_centers = compute_population_peth(
@@ -140,14 +199,29 @@ def _classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFr
         alignment_times=first_stim,
         **PETH_KWARGS,
     )
-    double_peak_rows, _, _ = canonical_double_peak_rows(
-        peth, bin_edges, bin_centers, unit_ids
+    double_ids_new = double_peak_ids_from_peth(
+        peth, bin_edges, bin_centers, unit_ids, peak_kwargs=PEAK_KWARGS
     )
-    double_ids = set(double_peak_rows["unit"].astype(int).tolist())
+    old_peak_kwargs = dict(PEAK_KWARGS)
+    old_peak_kwargs["search_window"] = (0.03, 0.12)
+    double_ids_old = double_peak_ids_from_peth(
+        peth, bin_edges, bin_centers, unit_ids, peak_kwargs=old_peak_kwargs
+    )
 
-    df["is_double"] = df["unit_id"].isin(double_ids)
-    if double_ids:
-        print(f"    double-peak unit_ids: {sorted(double_ids)}")
+    df["is_double"] = df["unit_id"].isin(double_ids_new)
+    df["was_double"] = df["unit_id"].isin(double_ids_old)
+    df["became_double"] = df["is_double"] & ~df["was_double"]
+    df["lost_double"] = ~df["is_double"] & df["was_double"]
+
+    print(f"    double-peak (new) n={len(double_ids_new)}")
+    if double_ids_new:
+        print(f"      unit_ids: {sorted(double_ids_new)}")
+    print(f"    double-peak (old) n={len(double_ids_old)}")
+    if double_ids_old:
+        print(f"      unit_ids: {sorted(double_ids_old)}")
+    print(
+        f"    delta: +{int(df['became_double'].sum())}  -{int(df['lost_double'].sum())}"
+    )
     return df
 
 
@@ -172,31 +246,62 @@ def make_grid(session_data, color_by_double: bool = True):
         df = sd["df"]
         subj, sess = sd["subject"], sd["session"]
 
-        col_title = f"{subj}  {sess[:8]}\nn={len(df)}  dp={int(df['is_double'].sum())}"
+        n_new = int(df["is_double"].sum())
+        n_old = int(df["was_double"].sum()) if "was_double" in df.columns else 0
+        n_plus = int(df["became_double"].sum()) if "became_double" in df.columns else 0
+        n_minus = int(df["lost_double"].sum()) if "lost_double" in df.columns else 0
+        col_title = (
+            f"{subj}  {sess[:8]}\n"
+            f"n={len(df)}  dp(old→new)={n_old}→{n_new}  (Δ +{n_plus}/-{n_minus})"
+        )
 
         ax = axes[col]
         if color_by_double:
-            other = df[~df["is_double"]]
-            double = df[df["is_double"]]
+            never_double = df[(~df["is_double"]) & (~df["was_double"])]
+            still_double = df[df["is_double"] & df["was_double"]]
+            became_double = df[df["became_double"]]
+            lost_double = df[df["lost_double"]]
             ax.scatter(
-                other["spike_duration_ms"],
-                other["firing_rate"],
+                never_double["spike_duration_ms"],
+                never_double["firing_rate"],
                 s=14,
                 alpha=0.40,
                 color=COL_OTHER,
                 rasterized=True,
-                label=f"other (n={len(other)})",
+                label=f"never double (n={len(never_double)})",
             )
             ax.scatter(
-                double["spike_duration_ms"],
-                double["firing_rate"],
+                still_double["spike_duration_ms"],
+                still_double["firing_rate"],
                 s=28,
                 alpha=0.90,
-                color=COL_DOUBLE,
+                color=COL_STILL_DOUBLE,
                 zorder=3,
                 edgecolors="k",
                 linewidths=0.3,
-                label=f"double-peak (n={len(double)})",
+                label=f"still double (n={len(still_double)})",
+            )
+            ax.scatter(
+                became_double["spike_duration_ms"],
+                became_double["firing_rate"],
+                s=34,
+                alpha=0.95,
+                color=COL_NEW_DOUBLE,
+                zorder=4,
+                edgecolors="k",
+                linewidths=0.3,
+                label=f"became double (n={len(became_double)})",
+            )
+            ax.scatter(
+                lost_double["spike_duration_ms"],
+                lost_double["firing_rate"],
+                s=34,
+                alpha=0.95,
+                color=COL_LOST_DOUBLE,
+                zorder=4,
+                edgecolors="k",
+                linewidths=0.3,
+                label=f"lost double (n={len(lost_double)})",
             )
             ax.legend(frameon=False, fontsize=8, loc="upper right")
         else:
@@ -216,7 +321,8 @@ def make_grid(session_data, color_by_double: bool = True):
 
     if color_by_double:
         fig.suptitle(
-            "Double-peak unit waveform profile  ·  all good units shown  ·  "
+            "Double-peak waveform profile  ·  all good units shown  ·  "
+            f"peak search old=(0.03, 0.12)s  new={PEAK_KWARGS['search_window']}  ·  "
             f"FS/RS boundary = {NARROW_BROAD_MS} ms",
             fontsize=10,
         )
@@ -235,32 +341,36 @@ def make_grid(session_data, color_by_double: bool = True):
 
 
 def main():
+    print(f"Figure root: {FIGURE_ROOT}")
+    print(f"Will write: {OUT_PATH}")
+    print(f"Will write: {OUT_PATH_MONO}")
     session_data = []
 
     for subject, session in SESSIONS:
         print(f"\n{subject} / {session}")
         try:
-            df = _fetch_unit_table(subject, session)
+            df = fetch_unit_table(subject, session)
         except Exception as e:
             print(f"  ✗ unit table: {e}")
             continue
         print(f"  units: {len(df)}")
 
         try:
-            first_stim = _get_first_stim(subject, session)
+            first_stim = get_first_stim(subject, session)
         except Exception as e:
             print(f"  ✗ events: {e}")
             continue
         print(f"  first_stim events: {len(first_stim)}")
 
-        df = _classify_double_peak(df, first_stim)
+        df = classify_double_peak(df, first_stim)
         n_dp = int(df["is_double"].sum())
         print(f"  double-peak: {n_dp}")
 
         session_data.append(dict(subject=subject, session=session, df=df))
 
     if not session_data:
-        raise RuntimeError("No sessions loaded.")
+        print("\nNo sessions loaded (missing data backend/plugins?). Nothing to plot.")
+        return
 
     fig = make_grid(session_data)
     with PdfPages(OUT_PATH) as pdf:

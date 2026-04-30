@@ -13,7 +13,6 @@ from pathlib import Path
 
 import matplotlib
 import numpy as np
-import pandas as pd
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -23,20 +22,18 @@ from ephys.src.config.locomotion import (
     PETH_KWARGS,
     RESP_WINDOW,
 )
-from ephys.src.utils.utils_analysis import (
+from ephys.src.utils.analysis_conditioned_stim import (
     build_trial_stim_classification,
-    compute_population_peth,
     extract_conditioned_stim_anchors,
 )
+from ephys.src.utils.analysis_peth import compute_population_peth
 from ephys.src.utils.grb006_data import (
     fetch_grb006_db_spike_times,
-    resolve_grb006_trial_ts_path,
+    load_grb006_aligned_trial_data,
 )
-from ephys.src.utils.utils_IO import (
-    fetch_good_units,
-    fetch_session_events,
-    fetch_trial_metadata,
-)
+from ephys.src.utils.io_chipmunk_trials import fetch_trial_metadata
+from ephys.src.utils.io_digital_events import fetch_session_events
+from ephys.src.utils.io_session_units import fetch_good_units
 
 OUT_PATH = Path("/Users/gabriel/lib/ephys/figures/locomotion/snr_distribution.pdf")
 OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -53,7 +50,7 @@ def snr_per_unit(peth, bc, window=RESP_WINDOW):
 
 def load_grb006():
     print("Loading GRB006...")
-    trial_ts = pd.read_pickle(resolve_grb006_trial_ts_path()).reset_index(drop=True)
+    _, trial_ts = load_grb006_aligned_trial_data()
     first_stim = trial_ts["first_stim_ts"].to_numpy(dtype=float)
     first_stim = first_stim[np.isfinite(first_stim)]
     unit_ids, spike_times = fetch_grb006_db_spike_times()

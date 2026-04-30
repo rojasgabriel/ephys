@@ -4,7 +4,6 @@ Analysis code for studying the impact of movements on V1 activity during freely-
 
 ## Requirements
 
-- Python 3.10+ (`.python-version` pins the default dev/CI interpreter to 3.11)
 - [uv](https://astral.sh/uv)
 
 ## Installation
@@ -14,15 +13,9 @@ Clone the repository:
     git clone https://github.com/rojasgabriel/ephys.git
     cd ephys
 
-Install dependencies:
+Install dependencies and venv:
 
     uv sync
-
-Run the lightweight checks used by CI:
-
-    uvx ruff check .
-    uvx ruff format --check .
-    uv run python -m unittest discover -s tests
 
 Analysis entrypoints are grouped under `scripts/` by role:
 
@@ -32,5 +25,6 @@ Analysis entrypoints are grouped under `scripts/` by role:
 
 Tested on:
 
-- macOS Tahoe 26.3
+- MacBook Pro M2
+- macOS Tahoe 26.3.1 (a)
 - Python 3.11

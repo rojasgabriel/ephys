@@ -19,6 +19,7 @@ remains available through an explicit CLI flag for follow-up reruns.
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import matplotlib
@@ -30,16 +31,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from ephys.src.config.locomotion import BASELINE_WINDOW, PETH_KWARGS, RESP_WINDOW
-from ephys.src.utils.grb006_data import load_grb006_hybrid_session_inputs
+from ephys.src.utils.grb006_data import load_grb006_db_session_inputs
 from ephys.src.utils.trial_alignment import enrich_chipmunk_trial_table
 from ephys.src.utils.unit_metrics import fetch_waveform_durations_ms
-from ephys.src.utils.utils_analysis import (
-    build_trial_stim_classification,
-    compute_population_peth,
-    mean_and_t_ci,
-)
+from ephys.src.utils.analysis_conditioned_stim import build_trial_stim_classification
+from ephys.src.utils.analysis_stats import mean_and_t_ci
+from ephys.src.utils.analysis_peth import compute_population_peth
 
-FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/locomotion")
+FIGURE_ROOT = Path(
+    os.environ.get("EPHYS_FIGURE_ROOT", "/Users/gabriel/lib/ephys/figures")
+)
+FIGURE_DIR = FIGURE_ROOT / "locomotion"
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 
 FS_RS_BOUNDARY_MS = 0.4
@@ -56,7 +58,8 @@ MEAN_CI_LEVEL = 0.95
 
 
 def load_db_trial_classification(subject: str, session: str) -> pd.DataFrame:
-    from ephys.src.utils.utils_IO import fetch_session_events, fetch_trial_metadata
+    from ephys.src.utils.io_chipmunk_trials import fetch_trial_metadata
+    from ephys.src.utils.io_digital_events import fetch_session_events
 
     aligned_events = fetch_session_events(subject, session)
     trial_table = fetch_trial_metadata(subject, session, aligned_events)
@@ -70,16 +73,16 @@ def load_db_trial_classification(subject: str, session: str) -> pd.DataFrame:
 
 def load_grb006_subject_data() -> dict[str, object]:
     subject, session = "GRB006", "20240821_121447"
-    print(f"\nLoading hybrid session: {subject} {session}")
+    print(f"\nLoading DB session: {subject} {session}")
     unit_ids, spike_times_by_unit, chipmunk_trial_table, local_trial_table = (
-        load_grb006_hybrid_session_inputs()
+        load_grb006_db_session_inputs()
     )
     waveform_duration_ms = fetch_waveform_durations_ms(
         subject, session, unit_ids, strict=True
     )
     print(
         f"  Units: {len(unit_ids)}  Trials: {len(chipmunk_trial_table)}  "
-        f"Local rows: {len(local_trial_table)}"
+        f"Classified rows: {len(local_trial_table)}"
     )
     return {
         "subject": subject,
@@ -92,7 +95,7 @@ def load_grb006_subject_data() -> dict[str, object]:
 
 
 def load_grb058_subject_data() -> dict[str, object]:
-    from ephys.src.utils.utils_IO import fetch_good_units
+    from ephys.src.utils.io_session_units import fetch_good_units
 
     subject, session = "GRB058", "20260312_134952"
     print(f"\nLoading DB session: {subject} {session}")
@@ -412,7 +415,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--log-scale",
         action="store_true",
-        help="Save a log-scale scatter version to a separate output path.",
+        help="Deprecated no-op; log scale is the default output.",
+    )
+    parser.add_argument(
+        "--linear-scale",
+        action="store_true",
+        help="Save a linear-scale scatter version instead of the default log-scale output.",
     )
     parser.add_argument(
         "--split-by-waveform",
@@ -450,13 +458,13 @@ def main() -> None:
         split_by_waveform = args.split_by_waveform
         fig = make_mode_figure(
             mode_results,
-            log_scale=args.log_scale,
+            log_scale=not args.linear_scale,
             split_by_waveform=split_by_waveform,
         )
         output_path = output_path_for_mode(
             mode_stem,
             shared_stationary_baseline=shared_stationary_baseline,
-            log_scale=args.log_scale,
+            log_scale=not args.linear_scale,
             split_by_waveform=split_by_waveform,
         )
         fig.savefig(output_path, bbox_inches="tight", dpi=300)

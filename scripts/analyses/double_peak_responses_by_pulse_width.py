@@ -16,6 +16,9 @@ Classification uses canonical params from src/config/double_peak.py
 (FDR selectivity + 5 sp/s height floor on both peaks).
 """
 
+import os
+from pathlib import Path
+
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -31,22 +34,25 @@ from ephys.src.config.double_peak import (
     SELECTIVITY_KWARGS,
 )
 from ephys.src.utils.peak_classification import (
-    baseline_mean as _baseline_mean,
+    baseline_mean,
     mark_peaks,
     plot_mean_sem_trace as plot_trace,
 )
-from ephys.src.utils.utils_IO import fetch_good_units, fetch_session_events
-from ephys.src.utils.utils_analysis import (
-    classify_peak_count,
-    compute_population_peth,
-    compute_unit_selectivity,
-)
+from ephys.src.utils.io_digital_events import fetch_session_events
+from ephys.src.utils.io_session_units import fetch_good_units
+from ephys.src.utils.analysis_peak_counts import classify_peak_count
+from ephys.src.utils.analysis_peth import compute_population_peth
+from ephys.src.utils.analysis_selectivity import compute_unit_selectivity
 
 GRB058_SESSIONS = ["20260312_134952", "20260319_131303"]
-OUT_PATH = "/Users/gabriel/lib/ephys/figures/double_peak/pulse_split.pdf"
+FIGURE_ROOT = Path(
+    os.environ.get("EPHYS_FIGURE_ROOT", "/Users/gabriel/lib/ephys/figures")
+)
+OUT_PATH = FIGURE_ROOT / "double_peak" / "pulse_split.pdf"
+OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _load_session(subject, session):
+def load_session(subject, session):
     """Return (unit_ids, spike_times, align_ev, peth_15, bin_edges, bin_centers, masks)."""
     st_per_unit = fetch_good_units(subject, session)
     align_ev = fetch_session_events(subject, session)
@@ -71,7 +77,7 @@ dp_rows = []  # list of dicts
 
 for session in GRB058_SESSIONS:
     unit_ids, spike_times, align_ev, peth_15, bin_edges, bin_centers, masks = (
-        _load_session("GRB058", session)
+        load_session("GRB058", session)
     )
     n_tr_15 = len(align_ev["first_stim_ev_15ms"])
     n_tr_30 = len(align_ev["first_stim_ev_30ms"])
@@ -91,7 +97,7 @@ for session in GRB058_SESSIONS:
     for uid in candidate_ids:
         i = exc_ids.index(uid)
         peak_row = peaks_df[peaks_df["unit"] == uid].iloc[0]
-        base = _baseline_mean(exc_peth[i], bin_centers, BASELINE_WINDOW)
+        base = baseline_mean(exc_peth[i], bin_centers, BASELINE_WINDOW)
         heights_above = [h - base for h in peak_row["peak_heights"]]
         if min(heights_above) >= MIN_PEAK_HEIGHT_ABS:
             double_ids.append(uid)
@@ -145,7 +151,7 @@ SP_ANIMAL_SESSIONS = [
 sp_rows = []
 for subject, session in SP_ANIMAL_SESSIONS:
     unit_ids, spike_times, align_ev, peth_15, bin_edges, bin_centers, masks = (
-        _load_session(subject, session)
+        load_session(subject, session)
     )
     n_tr_15 = len(align_ev["first_stim_ev_15ms"])
 
@@ -180,7 +186,7 @@ for subject, session in SP_ANIMAL_SESSIONS:
         robust_single_ids,
         key=lambda uid: (
             exc_peth[exc_ids.index(uid)].mean(0).max()
-            - _baseline_mean(exc_peth[exc_ids.index(uid)], bin_centers, BASELINE_WINDOW)
+            - baseline_mean(exc_peth[exc_ids.index(uid)], bin_centers, BASELINE_WINDOW)
         ),
     )
     i = exc_ids.index(best)

@@ -52,8 +52,9 @@ def load_utils_io(events_rows, mapping_rows):
     sys.modules["labdata_plugin"] = fake_labdata_plugin
     sys.modules["labdata_plugin.analysisschema"] = fake_analysisschema
 
-    sys.modules.pop("ephys.src.utils.utils_IO", None)
-    import ephys.src.utils.utils_IO as utils_io
+    for name in ("ephys.src.utils.io_digital_events",):
+        sys.modules.pop(name, None)
+    import ephys.src.utils.io_digital_events as utils_io
 
     return importlib.reload(utils_io)
 
@@ -254,6 +255,113 @@ class FetchSessionEventsTests(unittest.TestCase):
 
         np.testing.assert_allclose(align_ev["stim_ev_15ms"], [0.1])
         np.testing.assert_allclose(align_ev["stim_ev_30ms"], [1.2])
+
+    def test_fetch_session_events_uses_rising_edges_for_ports_when_values_exist(self):
+        events_rows = [
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "nidq",
+                "event_name": "ai0",
+                "event_timestamps": np.array([0.2, 1.2]),
+                "event_values": np.array([1, 1]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "nidq",
+                "event_name": "2",
+                "event_timestamps": np.array([0.0, 0.1, 1.0, 1.1]),
+                "event_values": np.array([1, 0, 1, 0]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "nidq",
+                "event_name": "1",
+                "event_timestamps": np.array([0.05, 0.15]),
+                "event_values": np.array([1, 0]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "nidq",
+                "event_name": "3",
+                "event_timestamps": np.array([0.3, 0.4]),
+                "event_values": np.array([1, 0]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "nidq",
+                "event_name": "4",
+                "event_timestamps": np.array([0.15, 0.25, 0.7, 0.8]),
+                "event_values": np.array([1, 0, 1, 0]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "nidq",
+                "event_name": "5",
+                "event_timestamps": np.array([0.5, 0.6]),
+                "event_values": np.array([1, 0]),
+            },
+        ]
+        mapping_rows = [
+            {
+                "subject_name": "GRB006",
+                "session_name": "20240821_121447",
+                "event_name": "visual_stim",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "nidq",
+                "source_event_name": "ai0",
+            },
+            {
+                "subject_name": "GRB006",
+                "session_name": "20240821_121447",
+                "event_name": "trial_start",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "nidq",
+                "source_event_name": "2",
+            },
+            {
+                "subject_name": "GRB006",
+                "session_name": "20240821_121447",
+                "event_name": "frames",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "nidq",
+                "source_event_name": "1",
+            },
+            {
+                "subject_name": "GRB006",
+                "session_name": "20240821_121447",
+                "event_name": "left_port",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "nidq",
+                "source_event_name": "3",
+            },
+            {
+                "subject_name": "GRB006",
+                "session_name": "20240821_121447",
+                "event_name": "center_port",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "nidq",
+                "source_event_name": "4",
+            },
+            {
+                "subject_name": "GRB006",
+                "session_name": "20240821_121447",
+                "event_name": "right_port",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "nidq",
+                "source_event_name": "5",
+            },
+        ]
+
+        utils_io = load_utils_io(events_rows, mapping_rows)
+        align_ev = utils_io.fetch_session_events("GRB006", "20240821_121447")
+
+        np.testing.assert_allclose(align_ev["trial_start"], [0.0, 1.0])
+        np.testing.assert_allclose(align_ev["center_port"], [0.15, 0.7])
+        np.testing.assert_allclose(align_ev["center_port_exit"], [0.25, 0.8])
+        np.testing.assert_allclose(align_ev["left_port"], [0.3])
+        np.testing.assert_allclose(align_ev["left_port_exit"], [0.4])
+        np.testing.assert_allclose(align_ev["right_port"], [0.5])
+        np.testing.assert_allclose(align_ev["right_port_exit"], [0.6])
 
     def test_fetch_session_events_raises_for_missing_logical_mapping(self):
         events_rows = [

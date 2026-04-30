@@ -6,6 +6,7 @@ stationary flashes and the first movement flash, with an additional split by
 response side.
 """
 
+import os
 from pathlib import Path
 
 import matplotlib
@@ -16,15 +17,18 @@ import seaborn as sns
 
 from ephys.src.utils.grb006_data import (
     fetch_grb006_db_spike_times,
-    resolve_grb006_trial_ts_path,
+    load_grb006_aligned_trial_data,
 )
-from ephys.src.utils.utils_analysis import compute_population_peth
+from ephys.src.utils.analysis_peth import compute_population_peth
 
 matplotlib.use("Agg")
 
 SUBJECT = "GRB006"
 SESSION = "20240821_121447"
-FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/adaptation")
+FIGURE_ROOT = Path(
+    os.environ.get("EPHYS_FIGURE_ROOT", "/Users/gabriel/lib/ephys/figures")
+)
+FIGURE_DIR = FIGURE_ROOT / "adaptation"
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 
 N_STATIONARY_STIMS = 4
@@ -46,7 +50,7 @@ RESP_WINDOW = (0.04, 0.10)
 
 
 def load_inputs() -> tuple[pd.DataFrame, list[np.ndarray]]:
-    trial_ts = pd.read_pickle(resolve_grb006_trial_ts_path())
+    _, trial_ts = load_grb006_aligned_trial_data()
     _, spike_times = fetch_grb006_db_spike_times()
     return trial_ts, spike_times
 

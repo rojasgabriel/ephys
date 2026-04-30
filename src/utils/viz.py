@@ -10,16 +10,14 @@ from spks.event_aligned import population_peth
 from scipy.stats import sem
 import ipywidgets as widgets
 from IPython.display import display, clear_output
-from ephys.src.utils.utils_IO import (
-    fetch_good_units,
-    fetch_session_events,
-    fetch_trial_metadata,
-)
-from ephys.src.utils.utils_analysis import (
+from ephys.src.utils.analysis_conditioned_stim import (
     build_trial_stim_classification,
-    compute_population_peth,
     extract_conditioned_stim_anchors,
 )
+from ephys.src.utils.analysis_peth import compute_population_peth
+from ephys.src.utils.io_chipmunk_trials import fetch_trial_metadata
+from ephys.src.utils.io_digital_events import fetch_session_events
+from ephys.src.utils.io_session_units import fetch_good_units
 
 
 class PSTHViewer:

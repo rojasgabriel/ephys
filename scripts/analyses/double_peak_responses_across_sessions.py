@@ -8,6 +8,7 @@ Story:
    fractions differed and the outcomes should not be pooled.
 """
 
+import os
 from pathlib import Path
 
 import matplotlib
@@ -35,16 +36,12 @@ from ephys.src.utils.peak_classification import (
     mark_peaks,
     plot_mean_sem_trace as plot_trace,
 )
-from ephys.src.utils.utils_IO import (
-    fetch_good_units,
-    fetch_session_events,
-    fetch_trial_metadata,
-)
-from ephys.src.utils.utils_analysis import (
-    classify_peak_count,
-    compute_population_peth,
-    compute_unit_selectivity,
-)
+from ephys.src.utils.io_chipmunk_trials import fetch_trial_metadata
+from ephys.src.utils.io_digital_events import fetch_session_events
+from ephys.src.utils.io_session_units import fetch_good_units
+from ephys.src.utils.analysis_peak_counts import classify_peak_count
+from ephys.src.utils.analysis_peth import compute_population_peth
+from ephys.src.utils.analysis_selectivity import compute_unit_selectivity
 
 
 GRB006_SHOW_UNITS = [579, 694, 217]
@@ -64,7 +61,10 @@ SESSION_SHOW_UNITS = {
     "20260319_131303": [515],
 }
 
-FIGURE_DIR = Path("/Users/gabriel/lib/ephys/figures/double_peak")
+FIGURE_ROOT = Path(
+    os.environ.get("EPHYS_FIGURE_ROOT", "/Users/gabriel/lib/ephys/figures")
+)
+FIGURE_DIR = FIGURE_ROOT / "double_peak"
 FIGURE_DIR.mkdir(parents=True, exist_ok=True)
 OUT_PATH = FIGURE_DIR / "dario_story.pdf"
 

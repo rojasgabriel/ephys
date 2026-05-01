@@ -2,6 +2,10 @@
 .claude/
 .cursor/
 notebooks/tutorials/DataJointNpxPreprocessing.ipynb
+AGENTS.md
+ANALYSES.md
+CLAUDE.md
+*.svg
 
 # Generated figures
 figures/

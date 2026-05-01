@@ -9,6 +9,10 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
+    env:
+      # Imports use `ephys.src.*`; the repo root must be discoverable as package `ephys`
+      # when its parent directory is on PYTHONPATH (matches local setups using ~/lib).
+      PYTHONPATH: ${{ github.workspace }}/..
 
     steps:
       - uses: actions/checkout@v4

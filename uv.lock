@@ -702,7 +702,7 @@ requires-dist = [
     { name = "ipykernel", specifier = ">=7.2.0" },
     { name = "ipympl", specifier = ">=0.10.0" },
     { name = "ipywidgets", specifier = ">=8.1.8" },
-    { name = "labdata", specifier = ">=0.0.22" },
+    { name = "labdata", specifier = ">=0.1.7" },
     { name = "pandas", specifier = "==2.2.2" },
     { name = "scipy", specifier = ">=1.15.3" },
     { name = "seaborn", specifier = ">=0.13.2" },
@@ -1271,7 +1271,7 @@ wheels = [
 
 [[package]]
 name = "labdata"
-version = "0.0.23"
+version = "0.1.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "boto3" },
@@ -1283,9 +1283,9 @@ dependencies = [
     { name = "safe-exit" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/82/ae/c35688669b354c9edae8d0dc146254340553ad2581908f90bd371f4fc497/labdata-0.0.23.tar.gz", hash = "sha256:7dd175d691e0156e7c50a07ff523a1c9308e11eede4d5ba0f0fbdd81ace68e14", size = 135906, upload-time = "2026-03-12T20:38:57.025Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/28/26/c790de0274a60aa43e6517598b44e12d7e79098642060be04ba308f1ac20/labdata-0.1.7.tar.gz", hash = "sha256:22062551ffee399c5732116ddb8f99e21b8a845d78bce6f77eaa4694300fe954", size = 181844, upload-time = "2026-04-15T00:07:27.187Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e5/d9/803ee59fb02067b363dc0b2e6ea1fd04b135dad517fc79b8be8048e27886/labdata-0.0.23-py3-none-any.whl", hash = "sha256:d68acaedd90e36bd8a585dc193ee0a7d0f3805e922381d41ffbff461205a5f95", size = 153122, upload-time = "2026-03-12T20:38:55.691Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/ea/ae7949d772ac0fb204d8a7dead9634aae82a1bf7828cd4b144ea739676ca/labdata-0.1.7-py3-none-any.whl", hash = "sha256:c90af62448a9b5a791e90bc661445b4e596378ac220d5b3ab578429aec039d58", size = 202352, upload-time = "2026-04-15T00:07:25.858Z" },
 ]
 
 [[package]]

@@ -13,7 +13,7 @@ Analysis figure scripts write PDF outputs under `figures/`.
 ## Regenerate Main Figures
 
 ```bash
-uv run python scripts/analyses/locomotion_condition_specific_peak_responses.py
+uv run python scripts/analyses/locomotion_condition_peak_from_locomotion_peaks.py
 uv run python scripts/analyses/double_peak_responses_across_sessions.py
 ```
 
@@ -23,18 +23,19 @@ uv run python scripts/analyses/double_peak_responses_across_sessions.py
 
 Primary locomotion analysis:
 
-`scripts/analyses/locomotion_condition_specific_peak_responses.py`
+`scripts/analyses/locomotion_condition_peak_from_locomotion_peaks.py`
 
 Writes:
 
-- `figures/locomotion/condition_peak_paired_last_stat_first_move_shared_stat_baseline_no_waveform_split.pdf`
-- `figures/locomotion/condition_peak_paired_last_stat_first_move_shared_stat_baseline.pdf` when run with `--split-by-waveform`
+- `figures/locomotion/condition_peak_from_locomotion_peaks_paired_last_stat_first_move_shared_stat_baseline_no_waveform_split_log.pdf`
+- `figures/locomotion/condition_peak_from_locomotion_peaks_paired_last_stat_first_move_shared_stat_baseline_log.pdf` when run with `--split-by-waveform`
 
 Current policy:
 
 - This is the canonical locomotion entrypoint.
 - The maintained comparison is paired last stationary vs first movement.
 - Each condition keeps its own peak latency inside the response window.
+- Peak responses come from `labdata_plugin.analysisschema.LocomotionPeaks`, so populate that computed table before rerunning the figure for new sessions.
 
 ### Double-Peak
 

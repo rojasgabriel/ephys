@@ -13,7 +13,7 @@ Analysis figure scripts write PDF outputs under `figures/`.
 ## Regenerate Main Figures
 
 ```bash
-uv run python scripts/analyses/locomotion_condition_peak_from_locomotion_peaks.py
+uv run python scripts/analyses/locomotion_peaks_analysis.py
 uv run python scripts/analyses/double_peak_responses_across_sessions.py
 ```
 
@@ -23,7 +23,7 @@ uv run python scripts/analyses/double_peak_responses_across_sessions.py
 
 Primary locomotion analysis:
 
-`scripts/analyses/locomotion_condition_peak_from_locomotion_peaks.py`
+`scripts/analyses/locomotion_peaks_analysis.py`
 
 Writes:
 
@@ -36,6 +36,7 @@ Current policy:
 - The maintained comparison is paired last stationary vs first movement.
 - Each condition keeps its own peak latency inside the response window.
 - Peak responses come from `labdata_plugin.analysisschema.LocomotionPeaks`, so populate that computed table before rerunning the figure for new sessions.
+- Use `--show` to open an interactive matplotlib window after saving the figure, or `--show --no-save` to inspect without writing a PDF.
 
 ### Double-Peak
 

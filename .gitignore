@@ -1,4 +1,10 @@
 .DS_Store
+.claude/
+.cursor/
+notebooks/tutorials/DataJointNpxPreprocessing.ipynb
+
+# Generated figures
+figures/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -33,6 +33,7 @@ from ephys.src.config.double_peak import (
     PETH_KWARGS,
     SELECTIVITY_KWARGS,
 )
+from ephys.src.config.typing_params import PeakCountParams
 from ephys.src.utils.peak_classification import (
     baseline_mean,
     mark_peaks,
@@ -168,11 +169,15 @@ for subject, session in SP_ANIMAL_SESSIONS:
     # prominence threshold is relaxed to 10 %.  Those units have a
     # borderline secondary bump and would be misleading as "single-peak"
     # reference examples.
+    sensitive_peak_kwargs: PeakCountParams = {
+        **PEAK_KWARGS,
+        "min_prominence_frac": 0.10,
+    }
     sensitive_peaks = classify_peak_count(
         exc_peth,
         bin_centers,
         unit_ids=exc_ids,
-        **{**PEAK_KWARGS, "min_prominence_frac": 0.10},
+        **sensitive_peak_kwargs,
     )
     robust_single_ids = [
         uid

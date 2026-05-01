@@ -28,7 +28,7 @@ from ephys.src.utils.analysis_conditioned_stim import (
 )
 from ephys.src.utils.analysis_peth import compute_population_peth
 from ephys.src.utils.grb006_data import (
-    fetch_grb006_db_spike_times,
+    fetch_grb006_spike_times,
     load_grb006_aligned_trial_data,
 )
 from ephys.src.utils.io_chipmunk_trials import fetch_trial_metadata
@@ -53,7 +53,7 @@ def load_grb006():
     _, trial_ts = load_grb006_aligned_trial_data()
     first_stim = trial_ts["first_stim_ts"].to_numpy(dtype=float)
     first_stim = first_stim[np.isfinite(first_stim)]
-    unit_ids, spike_times = fetch_grb006_db_spike_times()
+    unit_ids, spike_times = fetch_grb006_spike_times()
 
     trial_ts["trial_idx"] = np.arange(len(trial_ts))
     anchors = extract_conditioned_stim_anchors(trial_ts)

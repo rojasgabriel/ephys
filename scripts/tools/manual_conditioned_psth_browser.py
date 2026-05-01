@@ -36,7 +36,7 @@ from scipy.stats import sem
 from ephys.src.utils.grb006_data import (
     GRB006_SESSION,
     GRB006_SUBJECT,
-    load_grb006_db_session_inputs,
+    load_grb006_session_inputs,
 )
 from ephys.src.utils.analysis_conditioned_stim import (
     build_trial_stim_classification,
@@ -76,7 +76,7 @@ Session controls
 def load_grb006_downloads_data() -> tuple[
     dict[int, np.ndarray], np.ndarray, np.ndarray
 ]:
-    unit_ids, spike_times, trial_df, trial_ts = load_grb006_db_session_inputs()
+    unit_ids, spike_times, trial_df, trial_ts = load_grb006_session_inputs()
     st_per_unit = dict(zip(unit_ids, spike_times))
     anchors = extract_conditioned_stim_anchors(trial_ts)
     paired_last_stat = np.asarray(anchors["paired_last_stationary"], dtype=float)

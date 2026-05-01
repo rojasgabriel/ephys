@@ -19,7 +19,13 @@ DO NOT define these dicts inline in scripts. Import from here so all
 analyses move together.
 """
 
-PETH_KWARGS = dict(
+from ephys.src.config.typing_params import (
+    PeakCountParams,
+    PopulationPethParams,
+    UnitSelectivityParams,
+)
+
+PETH_KWARGS: PopulationPethParams = dict(
     pre_seconds=0.1,
     post_seconds=0.15,
     binwidth_ms=10,
@@ -33,7 +39,7 @@ RESPONSE_WINDOW = (0.03, 0.12)
 # anchored to the canonical post-latency window above.
 SEARCH_WINDOW = (0.0, 0.12)
 
-SELECTIVITY_KWARGS = dict(
+SELECTIVITY_KWARGS: UnitSelectivityParams = dict(
     base_window=BASELINE_WINDOW,
     resp_window=RESPONSE_WINDOW,
     test="wilcoxon",
@@ -41,7 +47,7 @@ SELECTIVITY_KWARGS = dict(
     alpha=0.05,
 )
 
-PEAK_KWARGS = dict(
+PEAK_KWARGS: PeakCountParams = dict(
     search_window=SEARCH_WINDOW,
     baseline_window=BASELINE_WINDOW,
     min_prominence_frac=0.25,

@@ -30,7 +30,7 @@ def fetch_trial_metadata(
     warning. Larger mismatches raise instead of silently truncating.
     """
     try:
-        from chipmunk import Chipmunk  # type: ignore
+        from chipmunk import Chipmunk
 
         sess_dicts = (
             SpikeSorting()

@@ -8,13 +8,13 @@ GRB006_SESSION = "20240821_121447"
 
 
 def load_grb006_first_stim() -> np.ndarray:
-    from ephys.src.utils.io_behavior import load_db_behavior
+    from ephys.src.utils.io_behavior import load_session_behavior
 
-    _, _, first_stim = load_db_behavior(GRB006_SUBJECT, GRB006_SESSION)
+    _, _, first_stim = load_session_behavior(GRB006_SUBJECT, GRB006_SESSION)
     return first_stim[np.isfinite(first_stim)]
 
 
-def fetch_db_spike_times(
+def fetch_spike_times(
     subject: str, session: str, unit_criteria_id: int = 1
 ) -> tuple[list[int], list[np.ndarray]]:
     from ephys.src.utils.io_session_units import fetch_good_units
@@ -23,22 +23,22 @@ def fetch_db_spike_times(
     return list(st_per_unit.keys()), list(st_per_unit.values())
 
 
-def fetch_grb006_db_spike_times(
+def fetch_grb006_spike_times(
     unit_criteria_id: int = 1,
 ) -> tuple[list[int], list[np.ndarray]]:
-    return fetch_db_spike_times(GRB006_SUBJECT, GRB006_SESSION, unit_criteria_id)
+    return fetch_spike_times(GRB006_SUBJECT, GRB006_SESSION, unit_criteria_id)
 
 
 def load_grb006_aligned_trial_data() -> tuple[pd.DataFrame, pd.DataFrame]:
-    from ephys.src.utils.io_behavior import load_db_behavior
+    from ephys.src.utils.io_behavior import load_session_behavior
 
-    trial_df, trial_ts, _ = load_db_behavior(GRB006_SUBJECT, GRB006_SESSION)
+    trial_df, trial_ts, _ = load_session_behavior(GRB006_SUBJECT, GRB006_SESSION)
     return trial_df, trial_ts
 
 
-def load_grb006_db_session_inputs(
+def load_grb006_session_inputs(
     unit_criteria_id: int = 1,
 ) -> tuple[list[int], list[np.ndarray], pd.DataFrame, pd.DataFrame]:
     trial_df, trial_ts = load_grb006_aligned_trial_data()
-    unit_ids, spike_times = fetch_grb006_db_spike_times(unit_criteria_id)
+    unit_ids, spike_times = fetch_grb006_spike_times(unit_criteria_id)
     return unit_ids, spike_times, trial_df, trial_ts

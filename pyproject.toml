@@ -23,3 +23,9 @@ dependencies = [
 
 [tool.uv.sources]
 spks = { git = "https://github.com/spkware/spks" }
+
+[tool.ty.src]
+include = ["src", "tests", "scripts", "notebooks"]
+
+[tool.ty.environment]
+extra-paths = ["typings"]

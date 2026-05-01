@@ -13,9 +13,9 @@ all others in blue. FS/RS boundary line at 0.4 ms (visual reference only).
 Classification uses canonical params from src/config/double_peak.py
 (FDR selectivity + 5 sp/s height floor on both peaks).
 
-GRB006 event loading uses DB-backed EventMapping rows.
-GRB006 spike times use DB-backed good-unit rows.
-GRB058 is fully DB-backed.
+GRB006 event loading uses EventMapping rows.
+GRB006 spike times use good-unit rows.
+GRB058 uses the same event and spike pipeline.
 
 Output
 ------
@@ -55,8 +55,9 @@ from ephys.src.config.double_peak import (
     PETH_KWARGS,
     SELECTIVITY_KWARGS,
 )
+from ephys.src.config.typing_params import PeakCountParams
 from ephys.src.utils.grb006_data import (
-    fetch_grb006_db_spike_times,
+    fetch_grb006_spike_times,
     load_grb006_first_stim,
 )
 from ephys.src.utils.peak_classification import baseline_mean
@@ -141,8 +142,8 @@ def fetch_unit_table(subject: str, session: str) -> pd.DataFrame:
 
 
 def fetch_grb006_spike_times_map() -> dict:
-    """Return {unit_id: spike_times_s} from the DB-backed good-unit rows."""
-    unit_ids, spike_times = fetch_grb006_db_spike_times()
+    """Return {unit_id: spike_times_s} from good-unit rows."""
+    unit_ids, spike_times = fetch_grb006_spike_times()
     return dict(zip(unit_ids, spike_times))
 
 
@@ -159,7 +160,7 @@ def double_peak_ids_from_peth(
     bin_centers: np.ndarray,
     unit_ids: list[int],
     *,
-    peak_kwargs: dict,
+    peak_kwargs: PeakCountParams,
 ) -> set[int]:
     """Return unit_ids that pass the canonical double-peak filters."""
     _, masks = compute_unit_selectivity(
@@ -202,8 +203,10 @@ def classify_double_peak(df: pd.DataFrame, first_stim: np.ndarray) -> pd.DataFra
     double_ids_new = double_peak_ids_from_peth(
         peth, bin_edges, bin_centers, unit_ids, peak_kwargs=PEAK_KWARGS
     )
-    old_peak_kwargs = dict(PEAK_KWARGS)
-    old_peak_kwargs["search_window"] = (0.03, 0.12)
+    old_peak_kwargs: PeakCountParams = {
+        **PEAK_KWARGS,
+        "search_window": (0.03, 0.12),
+    }
     double_ids_old = double_peak_ids_from_peth(
         peth, bin_edges, bin_centers, unit_ids, peak_kwargs=old_peak_kwargs
     )

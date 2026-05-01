@@ -60,7 +60,8 @@ def canonical_double_peak_rows(
 
     double_peak_rows = pd.DataFrame(double_rows)
     if double_peak_rows.empty:
-        double_peak_rows = pd.DataFrame(
+        empty = peak_rows.iloc[0:0].copy()
+        double_peak_rows = empty.reindex(
             columns=list(peak_rows.columns)
             + [
                 "baseline",

@@ -31,7 +31,7 @@ from ephys.src.config.double_peak import (
 )
 from ephys.src.utils.grb006_data import (
     GRB006_SESSION as SESSION,
-    fetch_grb006_db_spike_times,
+    fetch_grb006_spike_times,
     load_grb006_first_stim,
 )
 from ephys.src.utils.peak_classification import (
@@ -54,7 +54,7 @@ N_PANELS = 6
 
 def collect_double_peak_rows():
     first_stim = load_grb006_first_stim()
-    unit_ids, spike_times = fetch_grb006_db_spike_times()
+    unit_ids, spike_times = fetch_grb006_spike_times()
 
     peth, bin_edges, bin_centers = compute_population_peth(
         spike_times_per_unit=spike_times,
@@ -137,7 +137,7 @@ def main():
         raise RuntimeError("No GRB006 double-peak units passed the filters.")
 
     print(f"Session: {SESSION}")
-    print("Spike times: DB-backed good units")
+    print("Spike times: good units")
     print(f"Units loaded: {n_units}")
     print(f"First-stim events: {n_trials}")
     print(f"Excited units: {n_excited}")

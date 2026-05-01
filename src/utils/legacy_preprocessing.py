@@ -5,7 +5,7 @@ from os.path import join as pjoin
 
 import numpy as np
 import pandas as pd
-import spks  # type: ignore
+import spks
 
 
 def load_sync_data(sessionpath: str, sync_port: int = 0):
@@ -85,7 +85,7 @@ def process_trial_data(
     animal: str,
     session: str,
 ):
-    import chiCa.chiCa as chiCa  # type: ignore
+    import chiCa.chiCa as chiCa
 
     behavior_files = glob(
         pjoin(sessionpath, f"chipmunk/{animal}_{session}_chipmunk_*.mat")

@@ -11,7 +11,9 @@ DO NOT define these dicts or windows inline in scripts. Import from here so
 all locomotion analyses move together.
 """
 
-PETH_KWARGS = dict(
+from ephys.src.config.typing_params import PopulationPethParams
+
+PETH_KWARGS: PopulationPethParams = dict(
     pre_seconds=0.1,
     post_seconds=0.15,
     binwidth_ms=10,

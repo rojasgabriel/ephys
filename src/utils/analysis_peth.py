@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Optional, Sequence
 
 import numpy as np
-from spks.event_aligned import population_peth  # type: ignore
+from spks.event_aligned import population_peth
 
 
 def compute_population_peth(
@@ -59,7 +59,7 @@ def compute_population_peth(
     """
     kernel = None
     if t_rise is not None and t_decay is not None:
-        from spks.utils import alpha_function  # type: ignore
+        from spks.utils import alpha_function
 
         decay_bins = t_decay / (binwidth_ms / 1000)
         kernel = alpha_function(

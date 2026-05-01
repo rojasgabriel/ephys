@@ -21,17 +21,19 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+from typing import TypedDict
 
 import matplotlib
-from matplotlib import colormaps
-import numpy as np
-import pandas as pd
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+
+from matplotlib import pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
 
 from ephys.src.config.locomotion import BASELINE_WINDOW, PETH_KWARGS, RESP_WINDOW
-from ephys.src.utils.grb006_data import load_grb006_db_session_inputs
+from ephys.src.utils.io_session_units import fetch_good_units
 from ephys.src.utils.trial_alignment import enrich_chipmunk_trial_table
 from ephys.src.utils.unit_metrics import fetch_waveform_durations_ms
 from ephys.src.utils.analysis_conditioned_stim import build_trial_stim_classification
@@ -56,8 +58,13 @@ MODE_SPECS = [
 BACKGROUND_DOT_ALPHA = 0.2
 MEAN_CI_LEVEL = 0.95
 
+SUBJECT_SESSIONS = [
+    ("GRB006", "20240821_121447"),
+    ("GRB058", "20260312_134952"),
+]
 
-def load_db_trial_classification(subject: str, session: str) -> pd.DataFrame:
+
+def load_trial_stim_classification(subject: str, session: str) -> pd.DataFrame:
     from ephys.src.utils.io_chipmunk_trials import fetch_trial_metadata
     from ephys.src.utils.io_digital_events import fetch_session_events
 
@@ -71,42 +78,39 @@ def load_db_trial_classification(subject: str, session: str) -> pd.DataFrame:
     )
 
 
-def load_grb006_subject_data() -> dict[str, object]:
-    subject, session = "GRB006", "20240821_121447"
-    print(f"\nLoading DB session: {subject} {session}")
-    unit_ids, spike_times_by_unit, chipmunk_trial_table, local_trial_table = (
-        load_grb006_db_session_inputs()
-    )
-    waveform_duration_ms = fetch_waveform_durations_ms(
-        subject, session, unit_ids, strict=True
-    )
-    print(
-        f"  Units: {len(unit_ids)}  Trials: {len(chipmunk_trial_table)}  "
-        f"Classified rows: {len(local_trial_table)}"
-    )
-    return {
-        "subject": subject,
-        "session": session,
-        "unit_ids": unit_ids,
-        "spike_times_by_unit": spike_times_by_unit,
-        "waveform_duration_ms": waveform_duration_ms,
-        "trial_classification": local_trial_table,
-    }
+class SubjectSessionData(TypedDict):
+    subject: str
+    session: str
+    unit_ids: list[int]
+    spike_times_by_unit: list[np.ndarray]
+    waveform_duration_ms: np.ndarray
+    trial_classification: pd.DataFrame
 
 
-def load_grb058_subject_data() -> dict[str, object]:
-    from ephys.src.utils.io_session_units import fetch_good_units
+class LocomotionModeResult(TypedDict):
+    subject: str
+    mode_label: str
+    baseline_label: str
+    stationary_peak_response: np.ndarray
+    movement_peak_response: np.ndarray
+    fast_spiking_unit_mask: np.ndarray
+    regular_spiking_unit_mask: np.ndarray
+    n_stationary_events: int
+    n_movement_events: int
 
-    subject, session = "GRB058", "20260312_134952"
-    print(f"\nLoading DB session: {subject} {session}")
-    trial_classification = load_db_trial_classification(subject, session)
+
+def load_subject_session_data(subject: str, session: str) -> SubjectSessionData:
+    print(f"\nLoading session: {subject} {session}")
+    trial_classification = load_trial_stim_classification(subject, session)
     spike_times_by_unit_map = fetch_good_units(subject, session)
     unit_ids = list(spike_times_by_unit_map.keys())
     spike_times_by_unit = list(spike_times_by_unit_map.values())
     waveform_duration_ms = fetch_waveform_durations_ms(
         subject, session, unit_ids, strict=True
     )
-    print(f"  Units: {len(unit_ids)}  Trial rows: {len(trial_classification)}")
+    print(
+        f"  Units: {len(unit_ids)}  Classified trial rows: {len(trial_classification)}"
+    )
     return {
         "subject": subject,
         "session": session,
@@ -164,12 +168,12 @@ def select_mode_event_times(
 
 
 def analyze_subject_mode(
-    subject_data: dict[str, object],
+    subject_data: SubjectSessionData,
     mode_name: str,
     mode_label: str,
     *,
     shared_stationary_baseline: bool,
-) -> dict[str, object]:
+) -> LocomotionModeResult:
     stationary_event_times, movement_event_times = select_mode_event_times(
         subject_data["trial_classification"], mode_name
     )
@@ -178,11 +182,16 @@ def analyze_subject_mode(
             f"No events found for {subject_data['subject']} mode={mode_name}."
         )
 
+    spikes = subject_data["spike_times_by_unit"]
     stationary_population_psth, _, bin_centers_s = compute_population_peth(
-        subject_data["spike_times_by_unit"], stationary_event_times, **PETH_KWARGS
+        spikes,
+        stationary_event_times,
+        **PETH_KWARGS,
     )
     movement_population_psth, _, _ = compute_population_peth(
-        subject_data["spike_times_by_unit"], movement_event_times, **PETH_KWARGS
+        spikes,
+        movement_event_times,
+        **PETH_KWARGS,
     )
 
     stationary_mean_rate, stationary_baseline_rate = mean_psth_and_baseline_rate(
@@ -233,7 +242,7 @@ def analyze_subject_mode(
     }
 
 
-def print_mode_summary(mode_result: dict[str, object]) -> None:
+def print_mode_summary(mode_result: LocomotionModeResult) -> None:
     print(f"\n{mode_result['subject']}  {mode_result['mode_label']}")
     print(f"  stationary events: {mode_result['n_stationary_events']}")
     print(f"  movement events:   {mode_result['n_movement_events']}")
@@ -245,12 +254,12 @@ def print_mode_summary(mode_result: dict[str, object]) -> None:
 
 def plot_panel(
     ax: plt.Axes,
-    mode_results: list[dict[str, object]],
+    mode_results: list[LocomotionModeResult],
     *,
     log_scale: bool,
     split_by_waveform: bool,
 ) -> None:
-    subject_colors = colormaps["Set1"].colors
+    subject_colors = sns.color_palette("Set1")
     plotted_pairs: list[np.ndarray] = []
     for mode_result in mode_results:
         stationary_peak_response = np.asarray(mode_result["stationary_peak_response"])
@@ -307,11 +316,18 @@ def plot_panel(
             plotted_movement = movement_peak_response
 
         for mask_key, marker, cell_class in marker_specs:
-            class_mask = (
-                all_unit_mask
-                if mask_key == "all_unit_mask"
-                else np.asarray(mode_result[mask_key], dtype=bool)
-            )
+            if mask_key == "all_unit_mask":
+                class_mask = all_unit_mask
+            elif mask_key == "regular_spiking_unit_mask":
+                class_mask = np.asarray(
+                    mode_result["regular_spiking_unit_mask"], dtype=bool
+                )
+            elif mask_key == "fast_spiking_unit_mask":
+                class_mask = np.asarray(
+                    mode_result["fast_spiking_unit_mask"], dtype=bool
+                )
+            else:
+                raise RuntimeError(f"unknown mask_key {mask_key}")
             if not np.any(class_mask):
                 continue
             ax.scatter(
@@ -377,7 +393,10 @@ def plot_panel(
 
 
 def make_mode_figure(
-    mode_results: list[dict[str, object]], *, log_scale: bool, split_by_waveform: bool
+    mode_results: list[LocomotionModeResult],
+    *,
+    log_scale: bool,
+    split_by_waveform: bool,
 ) -> plt.Figure:
     fig, ax = plt.subplots(1, 1, figsize=(6.5, 6.0))
     plot_panel(
@@ -434,23 +453,20 @@ def main() -> None:
     args = parse_args()
     shared_stationary_baseline = not args.condition_specific_baseline
 
-    grb006_subject_data = load_grb006_subject_data()
-    grb058_subject_data = load_grb058_subject_data()
+    subject_datasets = [
+        load_subject_session_data(subject, session)
+        for subject, session in SUBJECT_SESSIONS
+    ]
 
     for mode_name, mode_label, mode_stem in MODE_SPECS:
         mode_results = [
             analyze_subject_mode(
-                grb006_subject_data,
+                subject_data,
                 mode_name=mode_name,
                 mode_label=mode_label,
                 shared_stationary_baseline=shared_stationary_baseline,
-            ),
-            analyze_subject_mode(
-                grb058_subject_data,
-                mode_name=mode_name,
-                mode_label=mode_label,
-                shared_stationary_baseline=shared_stationary_baseline,
-            ),
+            )
+            for subject_data in subject_datasets
         ]
         for mode_result in mode_results:
             print_mode_summary(mode_result)

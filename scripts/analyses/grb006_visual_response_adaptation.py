@@ -16,9 +16,10 @@ import pandas as pd
 import seaborn as sns
 
 from ephys.src.utils.grb006_data import (
-    fetch_grb006_db_spike_times,
+    fetch_grb006_spike_times,
     load_grb006_aligned_trial_data,
 )
+from ephys.src.config.typing_params import PopulationPethParams
 from ephys.src.utils.analysis_peth import compute_population_peth
 
 matplotlib.use("Agg")
@@ -39,7 +40,7 @@ STIM_LABELS = [
     "peak_fourth_flash",
     "peak_movement_flash",
 ]
-PETH_KWARGS = dict(
+PETH_KWARGS: PopulationPethParams = dict(
     pre_seconds=0.025,
     post_seconds=0.175,
     binwidth_ms=25,
@@ -51,7 +52,7 @@ RESP_WINDOW = (0.04, 0.10)
 
 def load_inputs() -> tuple[pd.DataFrame, list[np.ndarray]]:
     _, trial_ts = load_grb006_aligned_trial_data()
-    _, spike_times = fetch_grb006_db_spike_times()
+    _, spike_times = fetch_grb006_spike_times()
     return trial_ts, spike_times
 
 
@@ -91,7 +92,8 @@ def peak_matrix_for_stims(
         )
         peak_response = np.max(np.mean(peth[:, :, stim_mask], axis=1), axis=1)
         peak_responses.append(peak_response)
-    return pd.DataFrame(np.stack(peak_responses, axis=1), columns=STIM_LABELS)
+    mat = np.stack(peak_responses, axis=1)
+    return pd.DataFrame({lbl: mat[:, i] for i, lbl in enumerate(STIM_LABELS)})
 
 
 def plot_population_points(

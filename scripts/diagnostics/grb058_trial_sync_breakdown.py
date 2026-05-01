@@ -16,6 +16,8 @@ print(f"{'=' * 70}\n")
 
 align_ev = fetch_session_events(subject, session)
 trial_df = fetch_trial_metadata(subject, session, align_ev)
+if trial_df is None:
+    raise RuntimeError(f"Missing trial_df for {subject} {session}.")
 
 n = min(len(trial_df), len(align_ev["trial_start"]))
 bpod_sync = trial_df["t_sync"].iloc[:n].to_numpy(dtype=float)

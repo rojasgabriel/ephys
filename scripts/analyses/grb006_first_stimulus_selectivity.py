@@ -4,7 +4,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from ephys.src.utils.grb006_data import (
-    fetch_grb006_db_spike_times,
+    fetch_grb006_spike_times,
     load_grb006_aligned_trial_data,
 )
 from ephys.src.utils.analysis_peth import compute_population_peth
@@ -21,8 +21,8 @@ animal = "GRB006"
 session = "20240821_121447"
 
 _, trial_ts = load_grb006_aligned_trial_data()
-unit_ids, spike_times = fetch_grb006_db_spike_times()
-spike_times_per_unit = np.asarray(spike_times, dtype=object)
+unit_ids, spike_times = fetch_grb006_spike_times()
+spike_times_per_unit: list[np.ndarray] = list(spike_times)
 
 
 # %% Compute PETHs

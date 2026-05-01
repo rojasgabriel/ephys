@@ -28,7 +28,7 @@ from ephys.src.config.double_peak import (
 )
 from ephys.src.utils.grb006_data import (
     GRB006_SESSION,
-    fetch_grb006_db_spike_times,
+    fetch_grb006_spike_times,
     load_grb006_first_stim,
 )
 from ephys.src.utils.peak_classification import (
@@ -71,7 +71,7 @@ OUT_PATH = FIGURE_DIR / "dario_story.pdf"
 
 def collect_grb006():
     first_stim = load_grb006_first_stim()
-    unit_ids, spike_times = fetch_grb006_db_spike_times()
+    unit_ids, spike_times = fetch_grb006_spike_times()
     peth, bin_edges, bin_centers = compute_population_peth(
         spike_times_per_unit=spike_times,
         alignment_times=first_stim,

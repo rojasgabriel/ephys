@@ -83,16 +83,15 @@ Interpretation boundary:
 
 ### GRB006
 
-GRB006 `20240821_121447` is DB-loaded for maintained analyses.
+GRB006 `20240821_121447` loads from DataJoint for maintained analyses.
 
-- Spike times: DB-backed good units via `fetch_good_units`
-- Trial anchors: DB-backed `EventMapping` / `DatasetEvents.Digital`
-- Behavior summaries: DB-backed Chipmunk trial rows
+- Spike times: good units via `fetch_good_units`
+- Trial anchors: `EventMapping` / `DatasetEvents.Digital`
+- Behavior summaries: Chipmunk trial rows
 
 ### GRB058
 
-GRB058 is DB-backed through `fetch_good_units`, `fetch_session_events`, and
-`fetch_trial_metadata`.
+GRB058 uses `fetch_good_units`, `fetch_session_events`, and `fetch_trial_metadata`.
 
 `fetch_trial_metadata` mismatch policy:
 

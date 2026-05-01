@@ -2,6 +2,7 @@ import importlib
 import sys
 import types
 import unittest
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -42,16 +43,16 @@ def load_seed_module(existing_rows=None):
     FakeDigitalRelation.inserted_rows = []
     FakeDigitalRelation.delete_calls = 0
 
-    fake_schema = types.ModuleType("labdata.schema")
+    fake_schema: Any = types.ModuleType("labdata.schema")
     fake_schema.DatasetEvents = types.SimpleNamespace(Digital=FakeDigitalRelation)
 
-    fake_labdata = types.ModuleType("labdata")
+    fake_labdata: Any = types.ModuleType("labdata")
     fake_labdata.schema = fake_schema
 
-    fake_analysisschema = types.ModuleType("labdata_plugin.analysisschema")
+    fake_analysisschema: Any = types.ModuleType("labdata_plugin.analysisschema")
     fake_analysisschema.EventMapping = lambda: object()
 
-    fake_labdata_plugin = types.ModuleType("labdata_plugin")
+    fake_labdata_plugin: Any = types.ModuleType("labdata_plugin")
     fake_labdata_plugin.analysisschema = fake_analysisschema
 
     with patch.dict(

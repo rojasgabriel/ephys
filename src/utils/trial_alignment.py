@@ -77,7 +77,7 @@ def map_local_trial_rows_to_chipmunk_trials(
 
 def fetch_chipmunk_trial_table(subject: str, session: str) -> pd.DataFrame:
     from labdata.schema import DecisionTask  # noqa: F401
-    from chipmunk import Chipmunk  # type: ignore
+    from chipmunk import Chipmunk
 
     restriction = f"subject_name = '{subject}' AND session_name = '{session}'"
     chipmunk_trial_table = pd.DataFrame(

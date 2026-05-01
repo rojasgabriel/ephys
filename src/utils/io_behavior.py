@@ -16,7 +16,7 @@ from ephys.src.utils.io_digital_events import fetch_session_events
 from ephys.src.utils.trial_alignment import enrich_chipmunk_trial_table
 
 
-def load_db_behavior(
+def load_session_behavior(
     subject: str, session: str
 ) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
     """Load events, Chipmunk trials, enriched table, stim classification, first 15 ms stims."""

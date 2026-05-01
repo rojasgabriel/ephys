@@ -109,6 +109,13 @@ Current expected warnings:
 
 Still usable, but not part of the main figure surface:
 
+- `scripts/analyses/continuous_spike_rastermap.py`
+  - exploratory Rastermap discovery view over trial-window continuous spikes
+  - defaults to GRB006 `20240821_121447` and GRB058 `20260312_134952`
+  - bins spikes at `100 ms` from `t_initiate` to `t_response` on each trial,
+    then concatenates those trial windows before fitting Rastermap
+  - output: `figures/rastermap/trial_window_spike_rastermap.pdf` plus per-session `.npz` files
+  - not part of the maintained locomotion peak metric
 - `scripts/tools/manual_conditioned_psth_browser.py`
   - interactive locomotion PSTH browser
 - `scripts/analyses/grb006_first_stimulus_selectivity.py`

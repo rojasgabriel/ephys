@@ -13,6 +13,7 @@ dependencies = [
     "ipywidgets>=8.1.8",
     "labdata>=0.0.22",
     "pandas==2.2.2",
+    "rastermap>=1.0",
     "scipy>=1.15.3",
     "seaborn>=0.13.2",
     "spks",

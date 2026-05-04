@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import numpy as np
 from labdata.schema import DatasetEvents
 from spks.spikeglx_utils import load_spikeglx_binary
+
+from labdata_plugin.analysisschema import EventMapping
 
 
 DEFAULT_SESSION = {
@@ -18,6 +23,7 @@ DEFAULT_DATA_ROOTS = (
     Path("/Volumes/data"),
     Path.home() / "data",
 )
+AUDIO_ROLE_NAMES = ("audio_stim", "go_cue", "punish_wrong", "punish_early")
 
 
 def resolve_obx_bin_path(
@@ -142,6 +148,24 @@ def build_io1_row(
     }
 
 
+def classify_audio_epochs(
+    starts: np.ndarray, stops: np.ndarray
+) -> dict[str, np.ndarray]:
+    durations = stops - starts
+    event_starts = {
+        "audio_stim": starts[(durations >= 0.015) & (durations <= 0.05)],
+        "go_cue": starts[(durations >= 0.05) & (durations <= 0.25)],
+        "punish_wrong": starts[(durations >= 0.75) & (durations <= 1.25)],
+        "punish_early": starts[(durations >= 1.75) & (durations <= 2.25)],
+    }
+    classified = sum(value.size for value in event_starts.values())
+    if classified != starts.size:
+        raise RuntimeError(
+            f"Classified {classified} of {starts.size} recovered audio epochs."
+        )
+    return event_starts
+
+
 def insert_io1_if_missing(row: dict, apply: bool) -> None:
     key = {k: row[k] for k in DatasetEvents.Digital.projkeys}
     relation = DatasetEvents.Digital() & key
@@ -158,6 +182,63 @@ def insert_io1_if_missing(row: dict, apply: bool) -> None:
         f"{len(row['event_timestamps'])} timestamps "
         f"({len(row['event_timestamps']) // 2} epochs)."
     )
+
+
+def delete_derived_audio_event_rows(key: dict[str, str], apply: bool) -> None:
+    for event_name in AUDIO_ROLE_NAMES:
+        relation = DatasetEvents.Digital() & {**key, "event_name": event_name}
+        if len(relation):
+            count = len(np.asarray(relation.fetch1("event_timestamps")))
+            if apply:
+                relation.delete(force=True)
+            print(
+                f"{'Deleted' if apply else 'Would delete'} derived "
+                f"{key['stream_name']}:{event_name} row with {count} timestamps."
+            )
+
+
+def set_audio_event_mapping_rows(
+    key: dict[str, str],
+    apply: bool,
+    replace_existing_audio_mappings: bool,
+) -> None:
+    obsolete_names = ("task_audio", *AUDIO_ROLE_NAMES)
+    for event_name in obsolete_names:
+        obsolete_key = {
+            "subject_name": key["subject_name"],
+            "session_name": key["session_name"],
+            "event_name": event_name,
+        }
+        obsolete = EventMapping() & obsolete_key
+        if not len(obsolete):
+            continue
+        if not replace_existing_audio_mappings:
+            raise RuntimeError(
+                f"Existing EventMapping row `{event_name}` is present. "
+                "Rerun with --replace-audio-mappings to delete it."
+            )
+        if apply:
+            obsolete.delete(safemode=False)
+        print(f"{'Deleted' if apply else 'Would delete'} EventMapping {event_name}.")
+
+    row = {
+        "subject_name": key["subject_name"],
+        "session_name": key["session_name"],
+        "event_name": "audio",
+        "source_dataset_name": key["dataset_name"],
+        "source_stream_name": key["stream_name"],
+        "source_event_name": "io1",
+    }
+    relation = EventMapping() & {
+        "subject_name": row["subject_name"],
+        "session_name": row["session_name"],
+        "event_name": row["event_name"],
+    }
+    exists = len(relation) > 0
+    if apply and not exists:
+        EventMapping().insert1(row)
+    action = "Kept existing" if exists else "Inserted" if apply else "Would insert"
+    print(f"{action} EventMapping audio -> {row['source_stream_name']}:io1")
 
 
 def parse_args() -> argparse.Namespace:
@@ -183,7 +264,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Write the recovered obx:io1 row to DatasetEvents.Digital.",
+        help="Write the recovered io1 row and audio EventMapping row to DataJoint.",
+    )
+    parser.add_argument(
+        "--replace-audio-mappings",
+        action="store_true",
+        help="Delete older task_audio/audio-role EventMapping rows before inserting the audio-channel mapping.",
+    )
+    parser.add_argument(
+        "--delete-derived-audio-rows",
+        action="store_true",
+        help="Delete older derived audio_stim/go_cue/punish_* DatasetEvents.Digital rows.",
     )
     return parser.parse_args()
 
@@ -222,6 +313,18 @@ def main() -> None:
     if row is None:
         raise RuntimeError("Could not recover a valid obx:io1 audio event row.")
     insert_io1_if_missing(row, apply=args.apply)
+    counts = {
+        event_name: timestamps.size
+        for event_name, timestamps in classify_audio_epochs(starts, stops).items()
+    }
+    print(f"Parsed audio roles from obx:io1: {counts}")
+    if args.delete_derived_audio_rows:
+        delete_derived_audio_event_rows(key, apply=args.apply)
+    set_audio_event_mapping_rows(
+        key,
+        apply=args.apply,
+        replace_existing_audio_mappings=args.replace_audio_mappings,
+    )
 
 
 if __name__ == "__main__":

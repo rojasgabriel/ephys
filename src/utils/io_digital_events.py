@@ -32,6 +32,8 @@ REQUIRED_LOGICAL_EVENTS = (
     "center_port",
     "right_port",
 )
+OPTIONAL_LOGICAL_EVENTS = ("audio",)
+AUDIO_ROLE_NAMES = ("audio_stim", "go_cue", "punish_wrong", "punish_early")
 
 
 def format_available_event_rows(events: pd.DataFrame) -> list[str]:
@@ -60,7 +62,7 @@ def fetch_digital_events_dataframe(subject: str, session: str) -> pd.DataFrame:
 
 def fetch_event_mapping_dataframe(subject: str, session: str) -> pd.DataFrame:
     """Load `EventMapping` table rows for the session; raise if empty."""
-    from labdata_plugin.analysisschema import EventMapping
+    from ephys.labdata_plugin.analysisschema import EventMapping
 
     mapping = pd.DataFrame(
         (
@@ -72,6 +74,14 @@ def fetch_event_mapping_dataframe(subject: str, session: str) -> pd.DataFrame:
     if mapping.empty:
         raise ValueError(f"No EventMapping rows found for {subject} {session}")
     return mapping
+
+
+def normalize_event_values(value) -> np.ndarray | None:
+    if value is None:
+        return None
+    if np.isscalar(value) and pd.isna(value):
+        return None
+    return np.asarray(value)
 
 
 def resolve_logical_event_rows(
@@ -105,7 +115,9 @@ def resolve_logical_event_rows(
 
     resolved: dict[str, dict[str, np.ndarray | None]] = {}
     available_rows = format_available_event_rows(events)
-    for logical_name in REQUIRED_LOGICAL_EVENTS:
+    for logical_name in (*REQUIRED_LOGICAL_EVENTS, *OPTIONAL_LOGICAL_EVENTS):
+        if logical_name not in mapped_event_names:
+            continue
         row = mapping.loc[mapping["event_name"] == logical_name].iloc[0]
         mask = (
             (events["dataset_name"] == row["source_dataset_name"])
@@ -123,8 +135,7 @@ def resolve_logical_event_rows(
         event_values = (
             None
             if "event_values" not in source_row.index
-            or source_row["event_values"] is None
-            else np.asarray(source_row["event_values"])
+            else normalize_event_values(source_row["event_values"])
         )
         resolved[logical_name] = {
             "timestamps": np.asarray(source_row["event_timestamps"], dtype=float),
@@ -161,6 +172,51 @@ def extract_port_poke_exits(event_row: dict[str, np.ndarray | None]) -> np.ndarr
         return np.array([])
     values = np.asarray(values)
     return timestamps[values == 0]
+
+
+def extract_event_epochs(
+    event_row: dict[str, np.ndarray | None],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Onset/offset pairs from a digital-like event row."""
+    timestamps = np.asarray(event_row["timestamps"], dtype=float)
+    values = event_row["values"]
+    if values is None:
+        if timestamps.size % 2:
+            raise ValueError(
+                "Cannot parse paired event epochs from an odd timestamp count."
+            )
+        return timestamps[::2], timestamps[1::2]
+
+    values = np.asarray(values)
+    starts = timestamps[values == 1]
+    stops = timestamps[values == 0]
+    if starts.size != stops.size:
+        raise ValueError(
+            "Cannot parse event epochs when onset and offset counts differ."
+        )
+    if starts.size and np.any(stops <= starts):
+        raise ValueError(
+            "Cannot parse event epochs from non-monotonic onset/offset pairs."
+        )
+    return starts, stops
+
+
+def parse_audio_events(
+    event_row: dict[str, np.ndarray | None] | None,
+) -> dict[str, np.ndarray]:
+    """Classify audio-channel epochs by duration into task sound roles."""
+    empty = {name: np.array([]) for name in AUDIO_ROLE_NAMES}
+    if event_row is None:
+        return empty
+
+    starts, stops = extract_event_epochs(event_row)
+    durations = stops - starts
+    return {
+        "audio_stim": starts[(durations >= 0.015) & (durations <= 0.05)],
+        "go_cue": starts[(durations >= 0.05) & (durations <= 0.25)],
+        "punish_wrong": starts[(durations >= 0.75) & (durations <= 1.25)],
+        "punish_early": starts[(durations >= 1.75) & (durations <= 2.25)],
+    }
 
 
 def first_timestamp_per_train(ev_array: np.ndarray, sep_s: float = 1.0) -> np.ndarray:
@@ -240,6 +296,9 @@ def fetch_session_events(
       - `trial_start`, `frames`, `left_port`, `center_port`, `right_port`
       - `left_port_exit`, `center_port_exit`, `right_port_exit` when DB
         `event_values` are available
+      - optional audio-role event arrays parsed from mapped `audio` channel:
+        `audio_stim`, `go_cue`, `punish_wrong`, and `punish_early`
+        (empty when unmapped)
       - `stim_ev`           : onsets of all merged pulses (any width)
       - `first_stim_ev`     : first-of-train onsets across all widths
       - `stim_ev_15ms`      : onsets of pulses classified as 15 ms
@@ -265,6 +324,7 @@ def fetch_session_events(
         "center_port_exit": extract_port_poke_exits(resolved["center_port"]),
         "right_port_exit": extract_port_poke_exits(resolved["right_port"]),
     }
+    align_ev.update(parse_audio_events(resolved.get("audio")))
     align_ev.update(derive_merged_stim_pulse_arrays(align_ev["stim"]))
     return align_ev
 

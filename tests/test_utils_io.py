@@ -256,6 +256,130 @@ class FetchSessionEventsTests(unittest.TestCase):
 
         np.testing.assert_allclose(align_ev["stim_ev_15ms"], [0.1])
         np.testing.assert_allclose(align_ev["stim_ev_30ms"], [1.2])
+        np.testing.assert_allclose(align_ev["audio_stim"], [])
+        np.testing.assert_allclose(align_ev["go_cue"], [])
+        np.testing.assert_allclose(align_ev["punish_wrong"], [])
+        np.testing.assert_allclose(align_ev["punish_early"], [])
+
+    def test_fetch_session_events_returns_optional_audio_roles_when_mapped(self):
+        events_rows = [
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "obx",
+                "event_name": "io0",
+                "event_timestamps": np.array([0.1, 0.115]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "obx",
+                "event_name": "io2",
+                "event_timestamps": np.array([0.0, 0.1]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "obx",
+                "event_name": "io3",
+                "event_timestamps": np.array([0.0]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "obx",
+                "event_name": "io4",
+                "event_timestamps": np.array([0.2]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "obx",
+                "event_name": "io5",
+                "event_timestamps": np.array([0.3]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "obx",
+                "event_name": "io6",
+                "event_timestamps": np.array([0.5]),
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "obx",
+                "event_name": "io1",
+                "event_timestamps": np.array([2.0, 2.11, 4.0, 4.11]),
+                "event_values": None,
+            },
+            {
+                "dataset_name": "ephys_g0",
+                "stream_name": "obx",
+                "event_name": "unused",
+                "event_timestamps": np.array([6.0]),
+                "event_values": None,
+            },
+        ]
+        mapping_rows = [
+            {
+                "subject_name": "GRB058",
+                "session_name": "20260421_160125",
+                "event_name": "visual_stim",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "obx",
+                "source_event_name": "io0",
+            },
+            {
+                "subject_name": "GRB058",
+                "session_name": "20260421_160125",
+                "event_name": "trial_start",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "obx",
+                "source_event_name": "io2",
+            },
+            {
+                "subject_name": "GRB058",
+                "session_name": "20260421_160125",
+                "event_name": "frames",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "obx",
+                "source_event_name": "io3",
+            },
+            {
+                "subject_name": "GRB058",
+                "session_name": "20260421_160125",
+                "event_name": "left_port",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "obx",
+                "source_event_name": "io4",
+            },
+            {
+                "subject_name": "GRB058",
+                "session_name": "20260421_160125",
+                "event_name": "center_port",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "obx",
+                "source_event_name": "io5",
+            },
+            {
+                "subject_name": "GRB058",
+                "session_name": "20260421_160125",
+                "event_name": "right_port",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "obx",
+                "source_event_name": "io6",
+            },
+            {
+                "subject_name": "GRB058",
+                "session_name": "20260421_160125",
+                "event_name": "audio",
+                "source_dataset_name": "ephys_g0",
+                "source_stream_name": "obx",
+                "source_event_name": "io1",
+            },
+        ]
+
+        utils_io = load_utils_io(events_rows, mapping_rows)
+        align_ev = utils_io.fetch_session_events("GRB058", "20260421_160125")
+
+        np.testing.assert_allclose(align_ev["audio_stim"], [])
+        np.testing.assert_allclose(align_ev["go_cue"], [2.0, 4.0])
+        np.testing.assert_allclose(align_ev["punish_wrong"], [])
+        np.testing.assert_allclose(align_ev["punish_early"], [])
 
     def test_fetch_session_events_uses_rising_edges_for_ports_when_values_exist(self):
         events_rows = [

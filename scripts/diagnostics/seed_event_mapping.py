@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import sys
 
 import numpy as np
 import pandas as pd
 from labdata.schema import DatasetEvents
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from labdata_plugin.analysisschema import EventMapping
 
@@ -51,6 +55,11 @@ SESSION_MAPPING_SPECS = [
     {
         "subject_name": "GRB058",
         "session_name": "20260319_131303",
+        "source_event_names": DEFAULT_LOGICAL_EVENT_NAMES,
+    },
+    {
+        "subject_name": "GRB058",
+        "session_name": "20260421_160125",
         "source_event_names": DEFAULT_LOGICAL_EVENT_NAMES,
     },
 ]

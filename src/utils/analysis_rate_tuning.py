@@ -186,6 +186,7 @@ def summarize_units(tuning_curves: pd.DataFrame) -> pd.DataFrame:
                 "max_rate_sp_s",
                 "preferred_stim_rate",
                 "tuning_range_sp_s",
+                "frequency_selectivity_index",
                 "normalized_tuning_range",
             ]
         )
@@ -197,6 +198,10 @@ def summarize_units(tuning_curves: pd.DataFrame) -> pd.DataFrame:
         min_rate = float(unit_df["mean_sp_s"].min())
         max_rate = float(unit_df["mean_sp_s"].max())
         tuning_range = max_rate - min_rate
+        fsi_denominator = max_rate + min_rate
+        frequency_selectivity_index = (
+            tuning_range / fsi_denominator if fsi_denominator > 0 else np.nan
+        )
         mean_all = float(unit_df["mean_sp_s"].mean())
         rows.append(
             {
@@ -206,6 +211,7 @@ def summarize_units(tuning_curves: pd.DataFrame) -> pd.DataFrame:
                 "max_rate_sp_s": max_rate,
                 "preferred_stim_rate": float(unit_df.loc[max_idx, "stim_rate_vision"]),
                 "tuning_range_sp_s": tuning_range,
+                "frequency_selectivity_index": frequency_selectivity_index,
                 "normalized_tuning_range": tuning_range / (mean_all + 1e-9),
             }
         )

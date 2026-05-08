@@ -105,6 +105,13 @@ class RateTuningResponseTests(unittest.TestCase):
         unit_1_summary = summary[summary["unit_id"] == 1].iloc[0]
         self.assertEqual(unit_1_summary["preferred_stim_rate"], 8.0)
         self.assertEqual(unit_1_summary["tuning_range_sp_s"], 4.0)
+        self.assertEqual(unit_1_summary["frequency_selectivity_index"], 0.5)
+
+        unit_2_summary = summary[summary["unit_id"] == 2].iloc[0]
+        self.assertAlmostEqual(
+            unit_2_summary["frequency_selectivity_index"],
+            6.0 / 14.0,
+        )
 
 
 if __name__ == "__main__":

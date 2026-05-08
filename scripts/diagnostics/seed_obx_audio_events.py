@@ -51,19 +51,21 @@ def recover_io1_epochs(
 
     sample_rate_hz = float(meta["sRateHz"])
     bin_s = bin_ms / 1000.0
-    bin_samples = int(round(sample_rate_hz * bin_s))
-    n_bins = dat.shape[0] // bin_samples
+    n_bins = int(np.floor(dat.shape[0] / (sample_rate_hz * bin_s)))
+    sample_edges = np.rint(np.arange(n_bins + 1) * sample_rate_hz * bin_s).astype(
+        np.int64
+    )
+    sample_edges = np.clip(sample_edges, 0, dat.shape[0])
     group_bins = 5000
     amplitudes: list[np.ndarray] = []
     for bin_start in range(0, n_bins, group_bins):
         bin_stop = min(bin_start + group_bins, n_bins)
-        samples = dat[
-            bin_start * bin_samples : bin_stop * bin_samples,
-            channel_index,
-        ].reshape(bin_stop - bin_start, bin_samples)
+        edges = sample_edges[bin_start : bin_stop + 1]
+        samples = np.asarray(dat[edges[0] : edges[-1], channel_index])
+        local_starts = edges[:-1] - edges[0]
         amplitudes.append(
-            samples.max(axis=1).astype(np.float32)
-            - samples.min(axis=1).astype(np.float32)
+            np.maximum.reduceat(samples, local_starts).astype(np.float32)
+            - np.minimum.reduceat(samples, local_starts).astype(np.float32)
         )
 
     peak_to_peak = np.concatenate(amplitudes)
@@ -78,7 +80,7 @@ def recover_io1_epochs(
         return np.array([]), np.array([]), np.array([]), threshold
 
     min_duration_s = min_duration_ms / 1000.0
-    max_gap_bins = int(round((merge_gap_ms / 1000.0) / bin_s))
+    max_gap_s = merge_gap_ms / 1000.0
     starts: list[float] = []
     stops: list[float] = []
     peaks: list[float] = []
@@ -89,7 +91,8 @@ def recover_io1_epochs(
     for start, stop in zip(run_starts[1:], run_stops[1:]):
         start = int(start)
         stop = int(stop)
-        if start - cur_stop - 1 <= max_gap_bins:
+        gap_s = (sample_edges[start] - sample_edges[cur_stop + 1]) / sample_rate_hz
+        if gap_s <= max_gap_s:
             cur_stop = stop
         else:
             merged_runs.append((cur_start, cur_stop))
@@ -98,8 +101,8 @@ def recover_io1_epochs(
     merged_runs.append((cur_start, cur_stop))
 
     for start_bin, stop_bin in merged_runs:
-        start_s = start_bin * bin_s
-        stop_s = (stop_bin + 1) * bin_s
+        start_s = sample_edges[start_bin] / sample_rate_hz
+        stop_s = sample_edges[stop_bin + 1] / sample_rate_hz
         if stop_s - start_s < min_duration_s:
             continue
         starts.append(start_s)
@@ -166,12 +169,22 @@ def classify_audio_epochs(
     return event_starts
 
 
-def insert_io1_if_missing(row: dict, apply: bool) -> None:
+def insert_io1_if_missing(row: dict, apply: bool, replace_existing_io1: bool) -> None:
     key = {k: row[k] for k in DatasetEvents.Digital.projkeys}
     relation = DatasetEvents.Digital() & key
     if len(relation):
         existing = relation.fetch1()
         existing_count = len(np.asarray(existing["event_timestamps"]))
+        if replace_existing_io1:
+            if apply:
+                relation.delete(force=True)
+                DatasetEvents.Digital().insert1(row, allow_direct_insert=True)
+            print(
+                f"{'Replaced' if apply else 'Would replace'} existing obx:io1 row "
+                f"with {existing_count} old timestamps and "
+                f"{len(row['event_timestamps'])} new timestamps."
+            )
+            return
         print(f"Keeping existing obx:io1 row with {existing_count} timestamps.")
         return
 
@@ -267,6 +280,11 @@ def parse_args() -> argparse.Namespace:
         help="Write the recovered io1 row and audio EventMapping row to DataJoint.",
     )
     parser.add_argument(
+        "--replace-existing-io1",
+        action="store_true",
+        help="Delete and reinsert an existing obx:io1 row with corrected timestamps.",
+    )
+    parser.add_argument(
         "--replace-audio-mappings",
         action="store_true",
         help="Delete older task_audio/audio-role EventMapping rows before inserting the audio-channel mapping.",
@@ -312,7 +330,11 @@ def main() -> None:
     row = build_io1_row(key, starts, stops)
     if row is None:
         raise RuntimeError("Could not recover a valid obx:io1 audio event row.")
-    insert_io1_if_missing(row, apply=args.apply)
+    insert_io1_if_missing(
+        row,
+        apply=args.apply,
+        replace_existing_io1=args.replace_existing_io1,
+    )
     counts = {
         event_name: timestamps.size
         for event_name, timestamps in classify_audio_epochs(starts, stops).items()

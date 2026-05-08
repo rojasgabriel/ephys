@@ -47,11 +47,15 @@ def load_utils_io(events_rows, mapping_rows):
 
     fake_labdata_plugin: Any = types.ModuleType("labdata_plugin")
     fake_labdata_plugin.analysisschema = fake_analysisschema
+    fake_ephys_labdata_plugin: Any = types.ModuleType("ephys.labdata_plugin")
+    fake_ephys_labdata_plugin.analysisschema = fake_analysisschema
 
     sys.modules["labdata"] = fake_labdata
     sys.modules["labdata.schema"] = fake_schema
     sys.modules["labdata_plugin"] = fake_labdata_plugin
     sys.modules["labdata_plugin.analysisschema"] = fake_analysisschema
+    sys.modules["ephys.labdata_plugin"] = fake_ephys_labdata_plugin
+    sys.modules["ephys.labdata_plugin.analysisschema"] = fake_analysisschema
 
     for name in ("ephys.src.utils.io_digital_events",):
         sys.modules.pop(name, None)
